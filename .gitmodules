@@ -1,0 +1,3 @@
+[submodule "Sargasso"]
+	path = Sargasso
+	url = https://github.com/biomedicalinformaticsgroup/Sargasso.git
