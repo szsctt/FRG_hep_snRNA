@@ -1,0 +1,16 @@
+Rod-1_S1_L001  Rod-1_S1_L001_R1_001.fastq.gz   Rod-1_S1_L001_R2_001.fastq.gz
+Rod-1_S1_L002  Rod-1_S1_L002_R1_001.fastq.gz   Rod-1_S1_L002_R2_001.fastq.gz
+Rod-1_S2_L001  Rod-1_S2_L001_R1_001.fastq.gz   Rod-1_S2_L001_R2_001.fastq.gz
+Rod-1_S2_L002  Rod-1_S2_L002_R1_001.fastq.gz   Rod-1_S2_L002_R2_001.fastq.gz
+Rod-1_S3_L001  Rod-1_S3_L001_R1_001.fastq.gz   Rod-1_S3_L001_R2_001.fastq.gz
+Rod-1_S3_L002  Rod-1_S3_L002_R1_001.fastq.gz   Rod-1_S3_L002_R2_001.fastq.gz
+Rod-1_S4_L001  Rod-1_S4_L001_R1_001.fastq.gz   Rod-1_S4_L001_R2_001.fastq.gz
+Rod-1_S4_L002  Rod-1_S4_L002_R1_001.fastq.gz   Rod-1_S4_L002_R2_001.fastq.gz
+Rod-2_S5_L001  Rod-2_S5_L001_R1_001.fastq.gz   Rod-2_S5_L001_R2_001.fastq.gz
+Rod-2_S5_L002  Rod-2_S5_L002_R1_001.fastq.gz   Rod-2_S5_L002_R2_001.fastq.gz
+Rod-2_S6_L001  Rod-2_S6_L001_R1_001.fastq.gz   Rod-2_S6_L001_R2_001.fastq.gz
+Rod-2_S6_L002  Rod-2_S6_L002_R1_001.fastq.gz   Rod-2_S6_L002_R2_001.fastq.gz
+Rod-2_S7_L001  Rod-2_S7_L001_R1_001.fastq.gz   Rod-2_S7_L001_R2_001.fastq.gz
+Rod-2_S7_L002  Rod-2_S7_L002_R1_001.fastq.gz   Rod-2_S7_L002_R2_001.fastq.gz
+Rod-2_S8_L001  Rod-2_S8_L001_R1_001.fastq.gz   Rod-2_S8_L001_R2_001.fastq.gz
+Rod-2_S8_L002  Rod-2_S8_L002_R1_001.fastq.gz   Rod-2_S8_L002_R2_001.fastq.gz
