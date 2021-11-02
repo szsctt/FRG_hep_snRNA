@@ -1,0 +1,223 @@
+---
+author: "Suzanne Scott"
+date: "10/28/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+params:
+  include_mouse: true
+  dataset: LK03V_REDHC2
+---
+
+---
+title: `r glue::glue("{params$dataset} sample, {ifelse(params$include_mouse,'including', 'excluding')} mouse cells and genes")`
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(Seurat)
+library(dplyr)
+```
+
+After we have imported and QC'ed the data, we proceed with analysis using Seurat.  Here I'm just analysing one dataset at a time - in this case the '`r params$dataset`' sample, `r ifelse(params$include_mouse,'including', 'excluding')` mouse cells and genes.
+
+
+```{r}
+library(Seurat)
+library(dplyr)
+source("workflow.R")
+
+if (params$include_mouse) {
+  cells <- import_one_with_mouse(params$dataset)
+} else {
+  cells <- import_one_without_mouse(params$dataset)
+}
+
+
+
+# normalise the data
+cells <- NormalizeData(cells, normalization.method = "LogNormalize", scale.factor = 10000)
+
+
+```
+
+We have `r ncol(cells)` cells, and `r nrow(cells)` genes.
+
+## Highly variable features
+
+We next find a susbset of genes that exhibit high cell-to-cell variation in the dataset (i.e. highly expressed in some cell, lowly expressed in others).  Seurat focuses on these genes for further analyses.
+
+```{r}
+cells <- FindVariableFeatures(cells, selection.method = "vst", nfeatures = 2000)
+```
+
+In this dataset, the 10 most highly variable genes are:
+
+```{r}
+top10 <- head(VariableFeatures(cells), 10)
+top10
+```
+
+We can also visulise these variable genes, in the context of all genes.
+
+```{r warning=FALSE}
+LabelPoints(VariableFeaturePlot(cells), points=top10, repel=TRUE, xnudge = 0, ynudge=0)
+```
+
+## Linear dimensional reduction (PCA)
+
+Next, we scale the data, and perform PCA using the variable features that we just found
+
+```{r include=FALSE}
+# scale all the genes
+all.genes <- rownames(cells)
+cells <- ScaleData(cells, features=all.genes)
+
+# but only use the variable features for the PCA
+cells <- RunPCA(cells, features = VariableFeatures(object = cells))
+```
+
+PCA transforms the data onto new, orthogonal dimensions that capture the most variability in the data.  The first dimension captures the most variablity, the second captures the second-most, and so on.
+
+We first examine the genes associated with each new dimension:
+```{r}
+print(cells[['pca']], dims=1:5, nfeatures=5)
+```
+
+We can also explore which dimensions contain a lot of variability using heatmaps - here I'm showing the first 15 dimensions:
+
+
+```{r fig.height=15, fig.width=15}
+DimHeatmap(cells, dims = 1:20, cells = 500, balanced = TRUE)
+```
+To quantify what we see in the above method, Seurat provides the 'Elbow Plot' - we look for an 'elbow' in the below:
+
+
+```{r}
+ElbowPlot(cells)
+```
+Although this plot suggests a drop-off at around 10 PCs, I keep a bit more data (using 30 PCs).
+
+## Clustering
+
+Seurat uses a graph-based clustering approach.
+
+```{r}
+cells <- FindNeighbors(cells, dims=1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+```
+
+We can visulise the clusters on the PCA plot, but most people find that non-linear dimensional reduction techniques (tSNE, UMAP) are more informative.
+
+```{r}
+cells <- RunUMAP(cells, dims=1:30)
+DimPlot(cells, reduction="umap")
+```
+
+## Differently expressed features in each cluster
+
+We would next like to know which markers define the clusters.  Seurat uses differential expression to find these, by comparing the genes expressed in one cluster against one or more other clusters.  Therefore, we need to specify which clusters we want to compare.  Here, I compare the genes for each cluster against every other cluster.
+
+```{r}
+cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
+cell.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+The below heatmap shows the expression of these markers in each cluster.
+
+```{r fig.height=15, fig.width=15}
+top10 <- cell.markers %>% 
+  group_by(cluster) %>% 
+  top_n(n=10, wt = avg_log2FC)
+
+DoHeatmap(cells, features=top10$gene)
+```
+
+### Genes of interest - Zonation
+
+We can also look at the genes of interest with regards to zonation.  These genes are:
+
+```{r fig.height = 15, fig.width=15}
+
+
+genes_of_interest <- function(genes) {
+  if (!params$include_mouse) {
+  genes <- stringr::str_replace(genes, "Homo-w-AAV-", "")
+  }
+  p1 <- VlnPlot(cells, features = genes, log=TRUE)
+  p2 <- FeaturePlot(cells, features = genes)
+  print(glue::glue("A violin plot of the expression of these genes in each cluster:"))
+  print(p1)
+  print(glue::glue("How these genes are expressed:"))
+  print(p2)
+}
+
+genes <- c("Homo-w-AAV-GLUL", "Homo-w-AAV-CYP2E1", "Homo-w-AAV-ASS1", "Homo-w-AAV-ALB", "Homo-w-AAV-CYP2F2", "Homo-w-AAV-CYP1A2", "Homo-w-AAV-ARG1", "Homo-w-AAV-PCK1", "Homo-w-AAV-ASL", "Homo-w-AAV-GSTM3", "Homo-w-AAV-SDHD")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - proliferation
+
+```{r}
+genes <- c("Homo-w-AAV-LGR5", "Homo-w-AAV-AXIN2")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - transduction
+
+
+
+```{r}
+genes <- c("Homo-w-AAV-KIAA0319L", "Homo-w-AAV-GPR108")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - response to AAV
+
+```{r}
+genes <- c("Homo-w-AAV-TP53", "Homo-w-AAV-TP21", "Homo-w-AAV-IFI16", "Homo-w-AAV-TLR2")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - AAV expression
+
+```{r}
+aav_genes <- rownames(cells)[stringr::str_detect(rownames(cells), "VENUS|CERULEAN")]
+if (length(aav_genes) == 0) {
+  print("skipping this analysis because no AAV 'genes' found")
+} else {
+  genes_of_interest(aav_genes)
+}
+
+```
+
+
+
+
+```{r}
+save.file <- glue::glue("../out/Seurat/single_datasets/{params$dataset}_mouse-{params$include_mouse}")
+saveRDS(cells, file=glue::glue("{save.file}.rds"))
+write.table(cell.markers, file=glue::glue("{save.file}.tsv"), sep="\t")
+```
+
+
+## Session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

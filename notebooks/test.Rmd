@@ -1,0 +1,147 @@
+---
+title: "Liver scRNA data - exploring one sample"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Background 
+Information from Marti:
+
+Anyway, the nuclei samples are as follows, each as replicates. 
+
+Low engrafted hFRG 1 - #589 - Batch3/Rerun_of_Prev_batches/Rod_1 
+Low engrafted hFRG 2 - #602 - Batch3/Rerun_of_Prev_batches/Rod_2 
+Hepatocytes pellet #1 - Batch3/Rerun_of_Prev_batches/ROD_C2 
+Hepatocytes pellet #2 - Batch3/Rerun_of_Prev_batches/ROD_C3 
+Highly Engrafted hFRG 1 #265 - Batch3/Rerun_of_Prev_batches/ROD_C4 
+Highly Engrafted hFRG 2 #266 -Batch3/Rerun_of_Prev_batches/ROD_C5 
+#210 LK03 Cerulean + REDH Venus - Batch3/Rod_ASV_3_1 
+#233 LK03 Cerulean + REDH Venus - Batch3/Rod_ASV_3_2 
+#193 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_3 
+#224 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_4 
+
+I attach the maps of the transgenes in case you need them for anything. 
+
+Genes of interest related to zonation: 
+
+Glul 
+Cyp2e1 
+Ass1 
+Asl 
+Alb 
+Cyp2f2 
+Cyp1a2 
+Gstm3 
+Arg1 
+Pck1 
+Sdhd 
+
+Genes of interest related to proliferation: 
+
+Axin2, Lgr5
+
+Genes of interest related to AAV transduction. I think here it would be cool if possible to check if they correlate with AAV transduction. Also cool to check if any other gene correlates with AAV transduction (not sure if possible). 
+
+AAVR (KIIAA0319L), GPR108
+
+Genes related to response to AAV: 
+
+p53, p21,  IFI16, TLR2
+
+And then AAV transduction / correlation with zonation. 
+
+
+## Seruat
+
+```{r include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+```
+Start by just loading one dataset - one of the hepatocyte pellet samples
+```{r}
+hep_pellet.data <- Read10X(data.dir = "../data/reads/Chimera_Liver/ROD_C2/outs/filtered_feature_bc_matrix/")
+hep_pellet <- CreateSeuratObject(counts = hep_pellet.data, project='liver', min.cells=3, min.features=200)
+hep_pellet
+```
+
+So this sample has 27831 genes, 4175 cells (I assume it's not the other way around).
+
+Let's examine the data a bit:
+
+```{r}
+#head(hep_pellet.data)
+#tail(hep_pellet.data)
+```
+
+Ok, so it looks like the human genes are all prefixed with Homo_w_AAV and mouse genes are prefixed with Mus________.  
+
+First, check out the percentage  genes starting with the name 'Homo_w_AAV_' in each cell - that is, plot a histogram of the fraction of human genes amongst all cells
+
+```{r}
+PercentageFeatureSet(hep_pellet, pattern = "^Homo") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = nCount_RNA)) +
+  ggplot2::geom_histogram()
+```
+
+
+What about the percentage of human mitochondrial genes - these should start with 'Homo_w_AAV_MT-', but let's check they exist in the data.
+
+
+```{r}
+rownames(hep_pellet.data)[stringr::str_detect(rownames(hep_pellet.data), "MT-")]
+```
+
+
+
+
+```{r}
+PercentageFeatureSet(hep_pellet, pattern = "^Homo_w_AAV_MT-") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = nCount_RNA)) +
+  ggplot2::geom_histogram()
+```
+
+Nice!  So the nuclear prep seems to be good - there's no mitochondrial genes in there.
+What about mouse genes (starting with 'Mus')? 
+
+
+```{r}
+PercentageFeatureSet(hep_pellet, pattern = "^Mus") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = nCount_RNA)) +
+  ggplot2::geom_histogram()
+```
+
+Hmmm this is a bit strange since this sample is only hepatocytes.  It's probably caused by mapping human genes against the mouse genome.
+
+For comparison, let's check one of the highly engrafted and lowly engrafted samples:
+
+```{r}
+low.data <- Read10X(data.dir = "../data/reads/Chimera_Liver/Rod_1/outs/filtered_feature_bc_matrix/")
+low <- CreateSeuratObject(counts = low.data, project='liver', min.cells=3, min.features=200)
+low
+```
+
+```{r}
+PercentageFeatureSet(low, pattern = "^Mus") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = nCount_RNA)) +
+  ggplot2::geom_histogram() +
+  ggplot2::ggtitle("Percentage of mouse genes in low engraftment sample")
+```
+
+```{r}
+high.data <- Read10X(data.dir = "../data/reads/Chimera_Liver/ROD_C4/outs/filtered_feature_bc_matrix/")
+high <- CreateSeuratObject(counts = high.data, project='liver', min.cells=3, min.features=200)
+high
+
+```
+
+
+
+```{r}
+PercentageFeatureSet(high, pattern = "^Mus") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = nCount_RNA)) +
+  ggplot2::geom_histogram() +
+  ggplot2::ggtitle("Percentage of mouse genes in low engraftment sample")
+```
+

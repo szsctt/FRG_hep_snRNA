@@ -1,0 +1,276 @@
+---
+title: "Integrated analysis"
+author: "Suzanne Scott"
+date: "10/28/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+params:
+  include_mouse: false
+---
+
+After we have imported and QC'ed the data, we proceed with analysis using Seurat.
+
+```{r include=FALSE}
+library(Seurat)
+library(dplyr)
+source("workflow.R")
+
+if (params$include_mouse) {
+  data.obj <- import_with_mouse()
+} else {
+  data.obj <- import_without_mouse()
+}
+```
+
+## Nomalization, highly variable genes
+
+Next, we normalise the data, using a "LogNormalize' method.  Also, analysis in Seurat focuses on a subset of genes that exhibit high cell-to-cell variation in the dataset (highly expressed in some cells, lowly expressed in others).  The next step is to identify these genes.
+
+```{r include=FALSE}
+
+for (d in names(data.obj)) {
+  all.genes <- rownames(data.obj[[d]])
+  data.obj[[d]] <- NormalizeData(data.obj[[d]], normalization.method = "LogNormalize", scale.factor = 10000)
+  
+  data.obj[[d]] <- FindVariableFeatures(data.obj[[d]], selection.method = "vst", nfeatures = 2000)
+}
+```
+
+
+Plot these features for each dataset
+
+```{r fig.width=25, fig.height=15, warning=FALSE}
+plotlist = list()
+for (sample in names(data.obj)) {
+  top5 <- head(VariableFeatures(data.obj[[sample]]), 5)
+  plotlist[[sample]] <- VariableFeaturePlot(data.obj[[sample]])
+  plotlist[[sample]] <- LabelPoints(plot=plotlist[[sample]], points=top5, repel=TRUE, xnudge=0, ynudge=0) +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::ggtitle(sample)
+}
+cowplot::plot_grid(plotlist = plotlist)
+```
+## Scaling, Dimensionality
+
+We next need to know the dimensionality of each dataset.  When we do PCA (using the highly variable features above), each new dimension will capture some of the variability in the data, and we need to know how many dimensions are required to capture most of the variability.
+
+```{r include=FALSE}
+for (d in names(data.obj)) {
+  all.genes <- rownames(data.obj[[d]])
+  data.obj[[d]] <- ScaleData(data.obj[[d]], features=all.genes)
+  data.obj[[d]] <- RunPCA(data.obj[[d]], features=VariableFeatures(object = data.obj[[d]]))
+}
+
+```
+We use the same elbow plot method as before:
+```{r}
+plotlist <- list()
+for (d in names(datasets)) {
+  plotlist[[d]] <- ElbowPlot(data.obj[[d]])
+}
+```
+
+```{r}
+cowplot::plot_grid(plotlist=plotlist)
+```
+
+
+We could probably get a away with using 15 dimensions or so, but just to be safe we'll use 30.
+
+## Integration
+
+At this point, we can combine the datasets by finding integration anchors.  These are cross-dataset pairs of cells that are in a matched biological state ('anchors') that can be used to correct for both technical differences between datasets (i.e. batch effect correction) and to perform comparative analysis across experimental conditions.
+
+```{r include=FALSE}
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+data.combined <- IntegrateData(anchorset = anchors, dims=1:30)
+cells <- data.combined
+```
+
+
+```{r}
+get_dataset <- function(data_obj, barcode) {
+  for (sample in names(data_obj)) {
+    barcode_check <- stringr::str_split(barcode, "_")[[1]][1]
+    if (barcode_check %in% colnames(data_obj[[sample]])) {
+      return(sample)
+    }
+  }
+}
+
+# add column to split data on 
+cells[['dataset_ind']] <- purrr::map_chr(colnames(cells), 
+                                             ~stringr::str_split(., "_")[[1]][2])
+cells[['dataset_name']] <- purrr::map_chr(colnames(cells), 
+                                             ~get_dataset(data.obj, .))
+```
+
+
+## Dimensionality reduction - PCA
+
+We next run the standard Seurat workflow on the integrated data. First we scale the data, then we run PCA on the data.
+
+
+```{r}
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+```
+
+Seurat provides several useful ways of visualizing both cells and features that define the PCA.
+
+First we look at the top genes associated with the first five principal components
+
+```{r}
+print(cells[['pca']], dims=1:5, nfeatures=5)
+```
+
+
+## Clustering
+
+Seurat uses graph-based clustering to cluster cells with similar properties.  It first constructs a KNN grpah based on the euclidean distance in PCA space, and then it refines the edge weights betweeen any two cells based on the shared overlap in their local neighbourhoods (Jaccard similiarity).
+
+```{r include=FALSE}
+
+
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:10)
+cells <- FindClusters(cells, resolution = 0.5)
+```
+
+
+### UMAP
+
+We do a nonlinear PCA (UMAP) to visualise the clusters:
+
+```{r}
+cells <- RunUMAP(cells, reduction = "pca", dims = 1:10)
+DimPlot(cells, reduction="umap", label=TRUE, repel=TRUE)
+```
+
+Here I've colored points instead by which dataset the cell comes from:
+
+```{r}
+for (i in seq(length(names(data.obj)))) {
+  print(glue::glue("{i}: {names(data.obj[i])}"))
+}
+DimPlot(cells, reduction="umap", group.by="dataset_ind") 
+```
+
+The following table reports the top 2 genes that best separate every cluster compared to all remaining cells:
+
+```{r}
+cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
+cell.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+
+
+## Differently expressed features in each cluster
+
+We would next like to know which markers define the clusters.  Seurat uses differential expression to find these, by comparing the genes expressed in one cluster against one or more other clusters.  Therefore, we need to specify which clusters we want to compare.  Here, I compare the genes for each cluster against every other cluster.
+
+```{r}
+cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
+cell.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+The below heatmap shows the expression of these markers in each cluster.
+
+```{r fig.height=15, fig.width=15}
+top10 <- cell.markers %>% 
+  group_by(cluster) %>% 
+  top_n(n=10, wt = avg_log2FC)
+
+DoHeatmap(cells, features=top10$gene)
+```
+
+### Genes of interest - Zonation
+
+We can also look at the genes of interest with regards to zonation.  These genes are:
+
+```{r fig.height = 15, fig.width=15}
+
+
+genes_of_interest <- function(genes) {
+  if (!params$include_mouse) {
+  genes <- stringr::str_replace(genes, "Homo-w-AAV-", "")
+  }
+  p1 <- VlnPlot(cells, features = genes, log=TRUE)
+  p2 <- FeaturePlot(cells, features = genes)
+  print(glue::glue("A violin plot of the expression of these genes in each cluster:"))
+  print(p1)
+  print(glue::glue("How these genes are expressed:"))
+  print(p2)
+}
+
+genes <- c("Homo-w-AAV-GLUL", "Homo-w-AAV-CYP2E1", "Homo-w-AAV-ASS1", "Homo-w-AAV-ALB", "Homo-w-AAV-CYP2F2", "Homo-w-AAV-CYP1A2", "Homo-w-AAV-ARG1", "Homo-w-AAV-PCK1", "Homo-w-AAV-ASL", "Homo-w-AAV-GSTM3", "Homo-w-AAV-SDHD")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - proliferation
+
+```{r}
+genes <- c("Homo-w-AAV-LGR5", "Homo-w-AAV-AXIN2")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - transduction
+
+
+
+```{r}
+genes <- c("Homo-w-AAV-KIAA0319L", "Homo-w-AAV-GPR108")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - response to AAV
+
+```{r}
+genes <- c("Homo-w-AAV-TP53", "Homo-w-AAV-TP21", "Homo-w-AAV-IFI16", "Homo-w-AAV-TLR2")
+genes_of_interest(genes)
+
+```
+
+### Genes of interest - AAV expression
+
+```{r}
+aav_genes <- rownames(cells)[stringr::str_detect(rownames(cells), "VENUS|CERULEAN")]
+if (length(aav_genes) == 0) {
+  print("skipping this analysis because no AAV 'genes' found")
+} else {
+  genes_of_interest(aav_genes)
+}
+
+```
+
+
+
+
+```{r}
+save.file <- glue::glue("../out/Seurat/single_datasets/{params$dataset}_mouse-{params$include_mouse}")
+saveRDS(cells, file=glue::glue("{save.file}.rds"))
+write.table(cell.markers, file=glue::glue("{save.file}.tsv"), sep="\t")
+```
+
+
+## Session info
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,449 @@
+---
+title: "Liver scRNA data"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+
+```{r include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+```
+
+## Background 
+Information from Marti:
+
+The nuclei samples are as follows, each as replicates. 
+
+Low engrafted hFRG 1 - #589 - Batch3/Rerun_of_Prev_batches/Rod_1 
+
+Low engrafted hFRG 2 - #602 - Batch3/Rerun_of_Prev_batches/Rod_2 
+
+Hepatocytes pellet #1 - Batch3/Rerun_of_Prev_batches/ROD_C2 
+
+Hepatocytes pellet #2 - Batch3/Rerun_of_Prev_batches/ROD_C3 
+
+Highly Engrafted hFRG 1 #265 - Batch3/Rerun_of_Prev_batches/ROD_C4 
+
+Highly Engrafted hFRG 2 #266 -Batch3/Rerun_of_Prev_batches/ROD_C5 
+
+#210 LK03 Cerulean + REDH Venus - Batch3/Rod_ASV_3_1 
+
+#233 LK03 Cerulean + REDH Venus - Batch3/Rod_ASV_3_2 
+
+#193 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_3 
+
+#224 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_4 
+
+
+## Count matrices
+
+Read processing was done by the lab the collected the data.  They combined human and mouse references, as well as some AAV references, and aligned everything collectivley against the combined reference.
+
+## QC
+
+First, I'll just load all the data and do some basic QC.
+
+```{r include=FALSE}
+data.list <- list(
+  "low1" = "Rod_1",
+  "low2" = "Rod_2",
+  "hep1" = "ROD_C2",
+  "hep2" = "ROD_C3",
+  "high1" = "ROD_C4",
+  "high2" = "ROD_C5",
+  "LK03C_REDHV1" = "Rod_ASV_3_1",
+  "LK03C_REDHV2" = "Rod_ASV_3_2",  
+  "LK03V_REDHC1" = "Rod_ASV_3_3",  
+  "LK03V_REDHC2" = "Rod_ASV_3_4"
+)
+data.dir <- "../data/reads/Chimera_Liver"
+
+data.list <- purrr::map(data.list, ~file.path(data.dir, ., "outs", "filtered_feature_bc_matrix"))
+
+data.list <- purrr::map(data.list, ~Read10X(data.dir = .))
+
+```
+
+```{r warning=FALSE}
+data.obj <- purrr::map(data.list, ~CreateSeuratObject(counts = ., 
+                                                      project = "liver",
+                                                      min.cells = 3,
+                                                      min.features = 2000))
+```
+
+### Number of genes and cells
+
+Let's first check the number of features we have in each sample:
+
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+The most obvious thing here is that the two 'hep' samples, which are the hepatocyte pellets, have fewer genes and cells than all the other samples.  Perhaps we'd expect a lower gene count, because these samples should only have human genes, whereas the other samples should have some cells with  human genes and some cells with mouse genes.  However, there are also fewer cells in these samples as well.
+
+### Metrics
+
+We'd also like to look at the fraction of human genes, mouse genes and mitochondrial genes in each cell in each sample.
+
+```{r}
+make_qc_plots <- function(obj) {
+
+p1 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~PercentageFeatureSet(obj[[.]], pattern="^Homo")),
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Per-cell percentage of human genes") +
+  ggplot2::coord_flip()
+
+p2 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~PercentageFeatureSet(obj[[.]], pattern="^Mus")),
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Per-cell percentage of mouse genes") +
+  ggplot2::coord_flip()
+
+p3 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~PercentageFeatureSet(obj[[.]], pattern="Homo.+MT-")),
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Per-cell percentage of human mitochondrial genes") +
+  ggplot2::coord_flip()
+
+p4 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~PercentageFeatureSet(obj[[.]], pattern="Mus.+mt-")),
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Per-cell percentage of mouse mitochondrial genes") +
+  ggplot2::coord_flip()
+
+p5 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~obj[[.]][['nFeature_RNA']])
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nFeature_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Number of genes per cell") +
+  ggplot2::coord_flip()  
+
+p6 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~obj[[.]][['nCount_RNA']])
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Total aligned read count per cell") +
+  ggplot2::coord_flip()  
+
+return(list(p1, p2, p3, p4, p5, p6))
+
+}
+```
+
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist=make_qc_plots(data.obj))
+```
+
+
+
+### Number of genes per cell
+
+Usually, people also remove cells with few genes and lots of genes - in the Seurat example they remove any cells with fewer than 200 and more than 2500 genes.  But this  would remove a lot of our cells - instead remove any with less than 500 and more than 6000 genes.
+
+If we do this, our data looks like this:
+
+```{r}
+# filter
+for (sample in names(data.obj)) {
+    data.obj[[sample]] <- subset(data.obj[[sample]], subset = nFeature_RNA < 6000 & nFeature_RNA > 500)
+}
+
+```
+
+Checking how many cells and genes we're left with:
+
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+What do our QC plots look like after filtering?
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist = make_qc_plots(data.obj))
+```
+### Mitochondrial genes
+
+These samples are from nuclear preps, but there are still some cells with a reasonbly high percentage of human mitochondrial genes.
+
+These human mitochondrial genes are:
+```{r}
+rownames(data.obj[[1]])[stringr::str_detect(rownames(data.obj[[1]]), "^Homo.+MT-")]
+```
+
+We also have the following mouse mitochondrial genes:
+```{r}
+rownames(data.obj[[1]])[stringr::str_detect(rownames(data.obj[[1]]), "^Mus.+mt-")]
+```
+
+I next remove any cell with greater than .5% of human or mouse mitochondrial genes
+
+
+```{r}
+# filter
+for (sample in names(data.obj)) {
+    data.obj[[sample]][['percent.mt.human']] <- PercentageFeatureSet(data.obj[[sample]], "^Homo.+MT-")
+    data.obj[[sample]][['percent.mt.mouse']] <-PercentageFeatureSet(data.obj[[sample]], "^Mus.+mt-")
+    
+    data.obj[[sample]] <- subset(data.obj[[sample]], percent.mt.human < 0.5 & percent.mt.mouse < 0.5)
+
+}
+```
+
+
+After this, we're left with the following cells:
+
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+What do our QC plots look like after filtering?
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist = make_qc_plots(data.obj))
+```
+
+
+### Human and mouse cells
+
+It's not entirely clear if we should keep the mouse cells in the dataset or not.  In theory, they should cluster together and we'd be able to distinguish them from the human cells.  In practice, this may not work that well since sometimes human reads might be misaligned to mouse genes (especially when there is homology between the human and mouse genes).  Furthermore, the method for integrating the datasets together finds 'Anchors', which are cells that have similar physiological states in each sample, to integrate the datasets together.  I'm not sure if having a 'dirty' dataset (containing human and mouse cells) will complicate this process.  
+
+
+I can remove any cells with less than 85% human genes, but Seurat doesn't appear to allow users to remove genes, so even if I remove cells with low numbers of human genes, the mouse genes will still be in there.  So perhaps it's better to leave the mouse cells in there - we would expect then to see clusters of mouse cells separate to the human clusters.
+
+#### Removing mouse cells (with <85% human genes) 
+
+If we did remove the mouse cells (keeping only cells with at least 85% human genes), the data would look like this:
+
+```{r}
+# add columns 
+for (sample in names(data.obj)) {
+    data.obj[[sample]][['percent.human']] <- PercentageFeatureSet(data.obj[[sample]], pattern="^Homo") 
+    data.obj[[sample]] <- subset(data.obj[[sample]], subset = percent.human > 85)
+}
+
+```
+
+
+The number of features and cells we are left with in each sample:
+
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+And our QC metrics
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist=make_qc_plots(data.obj))
+```
+
+
+So we lose most of the cells from 'low1' and 'low2' if we do this, so these samples are indeed poorly repopulated with human cells.
+
+
+#### Removing mouse cells and mouse genes
+
+If we would like to remove both all the mouse genes, and also the mouse cells, we need to do a bit more work.  I use Seurat's `PercentageFeatureSet` function to conveniently calculate the percentage of human, mouse and mitochondrial genes, and then it's `subset` function to remove cells that don't meet a criteria.  However, Seurat does not allow the user to remove genes altogether.  I need the mouse genes to remove the cells (that contain mostly mouse genes), but then I can't remove those genes.  So instead, I will need to make my own version of the `PercentageFeatureSet` and `subset` functions from Seurat and apply them to the data before I create the Seurat objects for each sample.
+
+```{r include=FALSE}
+# function to retain only cells where the percentage of counts for genes matching regex (compared to total count for that cell) is over some fraction
+remove_genes_regex_frac <- function(mat, regex, frac) {
+  regex_genes <- stringr::str_detect(rownames(mat), regex)
+  cell_totals <- colSums(mat)
+  
+  regex_genes_each_cell <- colSums(mat[regex_genes, ])
+  
+  percent_regex <- regex_genes_each_cell / cell_totals
+  
+  regex_cells <- names(percent_regex[percent_regex > frac])
+  
+  return(mat[,colnames(mat) %in% regex_cells])
+}
+
+# function to remove genes matching regex
+remove_genes <- function(mat, regex) {
+  return(
+    mat[!stringr::str_detect(rownames(mat), regex),]
+  )
+}
+
+for (d in names(data.list)) {
+  # remove cells with fewer than 85% human genes
+  data.list[[d]] <- remove_genes_regex_frac(data.list[[d]], "^Homo_w_AAV_", 0.85)
+  # remove mouse genes
+  data.list[[d]] <- remove_genes(data.list[[d]], "^Mus")
+  # rename human genes to remove 'Homo_w_AAV_"
+  rownames(data.list[[d]]) <- stringr::str_replace(rownames(data.list[[d]]), "^Homo_w_AAV_", "")
+}
+
+
+data.obj <- purrr::map(data.list, ~CreateSeuratObject(counts = ., 
+                                                      project = "liver",
+                                                      min.cells = 3,
+                                                      min.features = 2000))
+
+```
+
+After we do this, we have the following number of cells and genes
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+and our QC metrics look like this:
+
+```{r fig.height=15, fig.width=15}
+make_qc_plots <- function(obj) {
+
+p3 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~PercentageFeatureSet(obj[[.]], pattern="^MT-")),
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Per-cell percentage of human mitochondrial genes") +
+  ggplot2::coord_flip()
+
+p4 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~obj[[.]][['nFeature_RNA']])
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nFeature_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Number of genes per cell") +
+  ggplot2::coord_flip()  
+
+p5 <- tibble(
+  sample = names(obj),
+  data = purrr::map(sample, ~obj[[.]][['nCount_RNA']])
+) %>% 
+  tidyr::unnest(data) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = sample, y=nCount_RNA)) +
+  ggplot2::geom_jitter(height=0, alpha=0.2) +
+  ggplot2::geom_violin() +
+  ggplot2::ggtitle("Total aligned read count per cell") +
+  ggplot2::coord_flip()  
+
+return(list( p3, p4, p5))
+}
+```
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist=make_qc_plots(data.obj))
+```
+
+Since we started again from scratch, we need to again remove any cells with a high or low number of genes.  I also discard any cells with more than 0.5% mitochondrial genes.
+
+```{r}
+# filter
+for (sample in names(data.obj)) {
+    data.obj[[sample]] <- subset(data.obj[[sample]], subset = nFeature_RNA < 7000 & nFeature_RNA > 500)
+    data.obj[[sample]][['percent.mt']] <- PercentageFeatureSet(data.obj[[sample]], pattern="^MT-")
+    data.obj[[sample]] <- subset(data.obj[[sample]], subset = percent.mt < 0.5)
+}
+
+```
+
+After all that, we're left with:
+
+```{r}
+tibble(
+  sample = names(data.obj),
+  genes = purrr::map_dbl(sample, ~nrow(data.obj[[.]][['RNA']]@counts)),
+  cells = purrr::map_dbl(sample, ~ncol(data.obj[[.]][['RNA']]@counts))
+)
+```
+
+```{r fig.height=15, fig.width=15}
+cowplot::plot_grid(plotlist=make_qc_plots(data.obj))
+```
+The main concern here is that we lose a lot of cells in the lowly engrafted samples.
+
+
+### AAV genes
+
+For future reference, we might want to know what the names of the AAV genes are.
+
+
+```{r}
+for (d in names(data.list)) {
+  print(glue::glue("in dataset {d}:"))
+  print(rownames(data.list[[d]])[stringr::str_detect(rownames(data.list[[d]]), "Homo_w_AAV.+AAV.+")])
+}
+
+```
+
+So there is only one 'gene' for each AAV. 
+
+## Conclusion
+
+There are probably two ways to process the data.  We can either leave all the mouse cells and genes in, or we can take them all out.  In theory, if we leave all the mouse cells and genes in, the mouse cells should cluster together, but it's unclear if they will cause any issues.  On the other hand, if we remove the mouse cells and genes, the lowly engrafted samples don't have many cells left.
+
+It's unclear what the right answer here is.
+
+## Session information
+
+```{r}
+sessionInfo()
+```
+
