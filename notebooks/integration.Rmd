@@ -29,7 +29,7 @@ if (params$include_mouse) {
 }
 
 save.file <- glue::glue("../out/Seurat/integrated/mouse-{params$include_mouse}")
-dir.create(dirname(save.file))
+dir.create(dirname(save.file), recursive=TRUE)
 ```
 
 ## Nomalization, highly variable genes
@@ -203,8 +203,6 @@ cell.markers %>%
 ```
 
 
-Something strange is going on in cluster 6 - the top 5 genes are all mitochondrial genes.  These are probably low-quality cells?
-
 We can also plot a heatmap of the top genes for each cluster
 
 ```{r fig.height=15, fig.width=15}
@@ -226,54 +224,51 @@ I do this for each cluster, and compare between the sample types (hepatocytes, l
 ```{r}
 
 # get number of clusters
-cells.meta
+
 DefaultAssay(cells) <- "RNA"
-cells.conservedMarkers <- list()
+cells.conservedMarkers <- tibble()
 
 
 for (i in unique(cells.meta$seurat_clusters)) {
-  cells.conservedMarkers[[i]] <- FindConservedMarkers(immune.combined, ident.1 = 0, grouping.var = "sample_type", verbose = FALSE)
-  write.table(cells.conservedMarkers[[i]], file=glue::glue("{save.file}_conservedClust{i}.tsv"), sep="\t")
+  
+  # check there are more than three cells in all sample types for  this cluster
+  doAnalysis <- cells.meta %>% 
+  group_by(sample_type, seurat_clusters) %>% 
+  summarise(count = n()) %>% 
+    filter(seurat_clusters == i) %>% 
+    pull(count) 
+  
+  doAnalysis <- all(doAnalysis > 3)
+  
+  if (doAnalysis) {
+  conservedMarkers <- FindConservedMarkers(cells, ident.1 = i, grouping.var = "sample_type", verbose = FALSE) 
+  
+  conservedMarkers <- conservedMarkers %>% 
+    mutate(gene = rownames(conservedMarkers)) %>% 
+    mutate(cluster = i)
+  
+  cells.conservedMarkers <- bind_rows(cells.conservedMarkers, conservedMarkers)
+  write.table(cells.conservedMarkers[[i]], file=glue::glue("{save.file}_conservedClust{i}.tsv"), sep="\t")    
+  
+  }
+  else {
+    print(glue::glue(
+      "skipping cluster {i} since not all groups have more than three cells"
+    ))
+  }
+
 }
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-We would next like to know which markers define the clusters, and are conserved across the conditions.
-
+These are the genes within each cluster that are differentially expressed between the conditions, ranked by minimum p value:
 
 ```{r}
-DefaultAssay(cells) <- "RNA"
+cells.conservedMarkers %>% 
+  select(cluster, gene, minimump_p_val, max_pval, low_p_val:high_p_val_adj) %>% 
+  arrange(minimump_p_val)
 ```
 
 
-
-.  Seurat uses differential expression to find these, by comparing the genes expressed in one cluster against one or more other clusters.  Therefore, we need to specify which clusters we want to compare.  Here, I compare the genes for each cluster against every other cluster.
-
-```{r}
-cell.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
-```
-
-The below heatmap shows the expression of these markers in each cluster.
-
-```{r fig.height=15, fig.width=15}
-top10 <- cell.markers %>% 
-  group_by(cluster) %>% 
-  top_n(n=10, wt = avg_log2FC)
-
-DoHeatmap(cells, features=top10$gene)
-```
 
 ### Genes of interest - Zonation
 
@@ -284,7 +279,7 @@ We can also look at the genes of interest with regards to zonation.  These genes
 
 genes_of_interest <- function(genes) {
   if (!params$include_mouse) {
-  genes <- stringr::str_replace(genes, "Homo-w-AAV-", "")
+    genes <- stringr::str_replace(genes, "Homo-w-AAV-", "")
   }
   p1 <- VlnPlot(cells, features = genes, log=TRUE)
   p2 <- FeaturePlot(cells, features = genes)
@@ -294,16 +289,47 @@ genes_of_interest <- function(genes) {
   print(p2)
 }
 
+gene_of_interest <- function(gene) {
+  if (!params$include_mouse) {
+    gene <- stringr::str_replace(gene, "Homo-w-AAV-", "")
+  }  
+  detected <- any(stringr::str_detect(rownames(cells), gene))
+  print(detected)
+  if (detected) {
+  p1 <- VlnPlot(cells, features = gene, log=TRUE, split.by="sample_type")
+  p2 <- FeaturePlot(cells, features = gene, split.by="sample_type")
+  print(p1)
+  print(p2)
+  } else {
+    glue::glue("skipping gene {gene}")
+  }
+}
+
 genes <- c("Homo-w-AAV-GLUL", "Homo-w-AAV-CYP2E1", "Homo-w-AAV-ASS1", "Homo-w-AAV-ALB", "Homo-w-AAV-CYP2F2", "Homo-w-AAV-CYP1A2", "Homo-w-AAV-ARG1", "Homo-w-AAV-PCK1", "Homo-w-AAV-ASL", "Homo-w-AAV-GSTM3", "Homo-w-AAV-SDHD")
 genes_of_interest(genes)
 
 ```
+
+```{r}
+for (gene in genes) {
+  gene_of_interest(gene)
+}
+
+```
+
 
 ### Genes of interest - proliferation
 
 ```{r}
 genes <- c("Homo-w-AAV-LGR5", "Homo-w-AAV-AXIN2")
 genes_of_interest(genes)
+
+```
+
+```{r}
+for (gene in genes) {
+  gene_of_interest(gene)
+}
 
 ```
 
@@ -317,11 +343,27 @@ genes_of_interest(genes)
 
 ```
 
+
+```{r}
+for (gene in genes) {
+  gene_of_interest(gene)
+}
+
+```
+
+
 ### Genes of interest - response to AAV
 
 ```{r}
 genes <- c("Homo-w-AAV-TP53", "Homo-w-AAV-TP21", "Homo-w-AAV-IFI16", "Homo-w-AAV-TLR2")
 genes_of_interest(genes)
+
+```
+
+```{r}
+for (gene in genes) {
+  gene_of_interest(gene)
+}
 
 ```
 
@@ -337,15 +379,12 @@ if (length(aav_genes) == 0) {
 
 ```
 
-
-
-
 ```{r}
-save.file <- glue::glue("../out/Seurat/single_datasets/{params$dataset}_mouse-{params$include_mouse}")
-saveRDS(cells, file=glue::glue("{save.file}.rds"))
-write.table(cell.markers, file=glue::glue("{save.file}.tsv"), sep="\t")
-```
+for (gene in aav_genes) {
+  gene_of_interest(gene)
+}
 
+```
 
 ## Session info
 
