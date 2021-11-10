@@ -8,7 +8,7 @@ module load singularity
 
 
 if [ ! -e scrna_rstudio.sif ]; then
-	ssh pearcey-login "module load singularity; singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:2"
+	ssh pearcey-login "module load singularity; singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:3"
 fi
 
 TMPDIR=rstudio-tmp # your choice
@@ -19,6 +19,8 @@ mkdir -p $TMPDIR/var/{lib,run}
 
 printf 'provider=sqlite\ndirectory=/var/lib/rstudio-server\n' > database.conf
 
+firefox &
+
 module load singularity
 singularity exec \
     -B $TMPDIR/var/lib:/var/lib/rstudio-server \
@@ -26,9 +28,7 @@ singularity exec \
     -B database.conf:/etc/rstudio/database.conf \
     -B $TMPDIR/tmp:/tmp \
     scrna_rstudio.sif \
-    rserver --www-address=127.0.0.1 --server-user=sco305 &
+    rserver --www-address=127.0.0.1 --server-user=sco305 
 
-echo "go to 127.0.0.1:8787"
-firefox
 
 
