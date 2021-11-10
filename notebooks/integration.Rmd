@@ -19,6 +19,7 @@ After we have imported and QC'ed the data, we proceed with analysis using Seurat
 ```{r include=FALSE}
 library(Seurat)
 library(dplyr)
+library(patchwork)
 source("workflow.R")
 
 if (params$include_mouse) {
@@ -26,6 +27,9 @@ if (params$include_mouse) {
 } else {
   data.obj <- import_without_mouse()
 }
+
+save.file <- glue::glue("../out/Seurat/integrated/mouse-{params$include_mouse}")
+dir.create(dirname(save.file))
 ```
 
 ## Nomalization, highly variable genes
@@ -56,32 +60,6 @@ for (sample in names(data.obj)) {
 }
 cowplot::plot_grid(plotlist = plotlist)
 ```
-## Scaling, Dimensionality
-
-We next need to know the dimensionality of each dataset.  When we do PCA (using the highly variable features above), each new dimension will capture some of the variability in the data, and we need to know how many dimensions are required to capture most of the variability.
-
-```{r include=FALSE}
-for (d in names(data.obj)) {
-  all.genes <- rownames(data.obj[[d]])
-  data.obj[[d]] <- ScaleData(data.obj[[d]], features=all.genes)
-  data.obj[[d]] <- RunPCA(data.obj[[d]], features=VariableFeatures(object = data.obj[[d]]))
-}
-
-```
-We use the same elbow plot method as before:
-```{r}
-plotlist <- list()
-for (d in names(datasets)) {
-  plotlist[[d]] <- ElbowPlot(data.obj[[d]])
-}
-```
-
-```{r}
-cowplot::plot_grid(plotlist=plotlist)
-```
-
-
-We could probably get a away with using 15 dimensions or so, but just to be safe we'll use 30.
 
 ## Integration
 
@@ -90,26 +68,38 @@ At this point, we can combine the datasets by finding integration anchors.  Thes
 ```{r include=FALSE}
 features <- SelectIntegrationFeatures(object.list = data.obj)
 anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
-data.combined <- IntegrateData(anchorset = anchors, dims=1:30)
-cells <- data.combined
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
 ```
 
 
 ```{r}
 get_dataset <- function(data_obj, barcode) {
-  for (sample in names(data_obj)) {
-    barcode_check <- stringr::str_split(barcode, "_")[[1]][1]
-    if (barcode_check %in% colnames(data_obj[[sample]])) {
-      return(sample)
-    }
-  }
+  barcode_check <- stringr::str_split(barcode, "_")[[1]][2]
+  return(names(data_obj)[as.integer(barcode_check)])
 }
+
+get_sample_type <- function(data_obj, barcode) {
+  return(
+    stringr::str_replace(
+      get_dataset(data_obj, barcode), 
+      "\\d+$", 
+      ""
+    )
+  )
+}
+
+
 
 # add column to split data on 
 cells[['dataset_ind']] <- purrr::map_chr(colnames(cells), 
                                              ~stringr::str_split(., "_")[[1]][2])
+
 cells[['dataset_name']] <- purrr::map_chr(colnames(cells), 
                                              ~get_dataset(data.obj, .))
+cells[['sample_type']] <- purrr::map_chr(colnames(cells),
+                                            ~get_sample_type(data.obj, .)
+                                         )
 ```
 
 
@@ -119,7 +109,6 @@ We next run the standard Seurat workflow on the integrated data. First we scale 
 
 
 ```{r}
-DefaultAssay(cells) <- "integrated"
 
 # Run the standard workflow for visualization and clustering
 cells <- ScaleData(cells, verbose = FALSE)
@@ -140,48 +129,137 @@ print(cells[['pca']], dims=1:5, nfeatures=5)
 Seurat uses graph-based clustering to cluster cells with similar properties.  It first constructs a KNN grpah based on the euclidean distance in PCA space, and then it refines the edge weights betweeen any two cells based on the shared overlap in their local neighbourhoods (Jaccard similiarity).
 
 ```{r include=FALSE}
-
-
-cells <- FindNeighbors(cells, reduction = "pca", dims = 1:10)
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
 cells <- FindClusters(cells, resolution = 0.5)
 ```
 
+
+```{r}
+cells.meta <- tibble(cells@meta.data)
+```
+
+
+There were `r length(unique(cells.meta$seurat_clusters))`, clusters and each cluster has the following number of cells in each cluster:
+
+```{r}
+cells.meta %>% 
+  group_by(dataset_name, seurat_clusters) %>% 
+  summarise(count = n()) %>% 
+  tidyr::pivot_wider(names_from="seurat_clusters", values_from="count")
+```
 
 ### UMAP
 
 We do a nonlinear PCA (UMAP) to visualise the clusters:
 
+```{r include=FALSE}
+cells <- RunUMAP(cells, reduction = "pca", dims = 1:30)
+p1 <- DimPlot(cells, reduction="umap", label=TRUE, repel=TRUE)
+p2 <- DimPlot(cells, reduction="umap", label=FALSE, group.by="dataset_name")
+```
+
+
 ```{r}
-cells <- RunUMAP(cells, reduction = "pca", dims = 1:10)
-DimPlot(cells, reduction="umap", label=TRUE, repel=TRUE)
+p1 + p2
 ```
 
 Here I've colored points instead by which dataset the cell comes from:
 
 ```{r}
-for (i in seq(length(names(data.obj)))) {
-  print(glue::glue("{i}: {names(data.obj[i])}"))
-}
-DimPlot(cells, reduction="umap", group.by="dataset_ind") 
+
+
+DimPlot(cells, reduction="umap", split.by="dataset_name", ncol=5)
+
 ```
 
-The following table reports the top 2 genes that best separate every cluster compared to all remaining cells:
+And here I've combined the replicates of the same sample types:
+
+```{r}
+DimPlot(cells, reduction="umap", split.by="sample_type", ncol=3)
+```
+
+
+## Differently expressed features in each cluster - all cells
+
+We first look at the genes that define the clusters, regardless of the sample from which the cells in that cluster came.  The following table shows the top five genes that are the most different in each cluster compared the the rest of the cells.
+
+In other words (the words of [Jared Andrews](https://www.biostars.org/p/409790/)), this analysis will:
+
+> find markers differentially expressed in each identity group by comparing it to all of the others - you don't have to manually define anything. Note that markers may bleed over between closely-related groups - they are not forced to be specific to only one group. 
 
 ```{r}
 cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
+
+
+saveRDS(cells, file=glue::glue("{save.file}.rds"))
+write.table(cell.markers, file=glue::glue("{save.file}_find-all-markers.tsv"), sep="\t")
+```
+
+
+```{r}
 cell.markers %>%
     group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
+    slice_max(n = 5, order_by = avg_log2FC)
+```
+
+
+Something strange is going on in cluster 6 - the top 5 genes are all mitochondrial genes.  These are probably low-quality cells?
+
+We can also plot a heatmap of the top genes for each cluster
+
+```{r fig.height=15, fig.width=15}
+top10 <- cell.markers %>% 
+  group_by(cluster) %>% 
+  top_n(n=10, wt = avg_log2FC)
+
+DoHeatmap(cells, features=top10$gene)
+```
+
+## Conserved cell type markers
+
+We next look at the genes that are [conserved between two groups](https://satijalab.org/seurat/reference/findconservedmarkers):
+
+> find markers that are conserved between two groups - this can be useful if you want to find markers that are conserved between a treated and untreated condition for a specific cell type or group of cells. It means they are differentially expressed compared to other groups, but have similar expression between the two groups you're actually comparing.
+
+I do this for each cluster, and compare between the sample types (hepatocytes, low engraftment, high engraftment, vector).  So the genes identified here are conserved in each cluster, irrespective of the source of the cells.
+
+```{r}
+
+# get number of clusters
+cells.meta
+DefaultAssay(cells) <- "RNA"
+cells.conservedMarkers <- list()
+
+
+for (i in unique(cells.meta$seurat_clusters)) {
+  cells.conservedMarkers[[i]] <- FindConservedMarkers(immune.combined, ident.1 = 0, grouping.var = "sample_type", verbose = FALSE)
+  write.table(cells.conservedMarkers[[i]], file=glue::glue("{save.file}_conservedClust{i}.tsv"), sep="\t")
+}
+
 ```
 
 
 
-## Differently expressed features in each cluster
 
-We would next like to know which markers define the clusters.  Seurat uses differential expression to find these, by comparing the genes expressed in one cluster against one or more other clusters.  Therefore, we need to specify which clusters we want to compare.  Here, I compare the genes for each cluster against every other cluster.
+
+
+
+
+
+
+
+We would next like to know which markers define the clusters, and are conserved across the conditions.
+
 
 ```{r}
-cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
+DefaultAssay(cells) <- "RNA"
+```
+
+
+
+.  Seurat uses differential expression to find these, by comparing the genes expressed in one cluster against one or more other clusters.  Therefore, we need to specify which clusters we want to compare.  Here, I compare the genes for each cluster against every other cluster.
+
+```{r}
 cell.markers %>%
     group_by(cluster) %>%
     slice_max(n = 2, order_by = avg_log2FC)
