@@ -115,14 +115,14 @@ DimPlot(aizarani, reduction="tsne")
 
 Finding markers for the clusters:
 ```{r include=FALSE}
-#aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
+aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
 ```
 
 Top three markers for each cluster:
 ```{r}
- # aizarani.markers %>%
- #     group_by(cluster) %>%
- #     slice_max(n = 3, order_by = avg_log2FC)
+ aizarani.markers %>%
+     group_by(cluster) %>%
+     slice_max(n = 3, order_by = avg_log2FC)
 ```
 Figure 1d from the paper looks liks this:
 
