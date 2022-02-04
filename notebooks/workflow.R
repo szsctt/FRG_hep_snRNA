@@ -95,6 +95,8 @@ import_one_without_mouse <- function(name) {
   mat <- remove_genes(mat, "^Mus")
   # rename human genes to remove 'Homo_w_AAV_"
   rownames(mat) <- stringr::str_replace(rownames(mat), "^Homo_w_AAV_", "")
+  rownames(mat) <- stringr::str_replace(rownames(mat), "AAV-CERULEAN-BC-3", "CERULEAN")
+  rownames(mat) <- stringr::str_replace(rownames(mat), "AAV-VENUS-BC-1", "VENUS")
 
   # convert to seurat object
   cells <- Seurat::CreateSeuratObject(counts = mat,

@@ -100,6 +100,11 @@ cells[['dataset_name']] <- purrr::map_chr(colnames(cells),
 cells[['sample_type']] <- purrr::map_chr(colnames(cells),
                                             ~get_sample_type(data.obj, .)
                                          )
+cells[['LK03C_REDHV']] <- ifelse(cells[['sample_type']] == "LK03C_REDHV",
+                                 "LK03C_REDHV", NA)
+
+cells[['LK03V_REDHC']] <- ifelse(cells[['sample_type']] == "LK03V_REDHC",
+                                 "LK03V_REDHC", NA)
 ```
 
 
@@ -289,19 +294,50 @@ genes_of_interest <- function(genes) {
   print(p2)
 }
 
+
 gene_of_interest <- function(gene) {
   if (!params$include_mouse) {
     gene <- stringr::str_replace(gene, "Homo-w-AAV-", "")
   }  
   detected <- any(stringr::str_detect(rownames(cells), gene))
-  print(detected)
   if (detected) {
-  p1 <- VlnPlot(cells, features = gene, log=TRUE, split.by="sample_type")
-  p2 <- FeaturePlot(cells, features = gene, split.by="sample_type")
-  print(p1)
-  print(p2)
+    p1 <- VlnPlot(cells, features = gene, log=TRUE, split.by="sample_type")
+    
+    print(p1)
+    plotlist <- FeaturePlot(cells, features = gene, split.by="sample_type", 
+                            keep.scale="all", order=TRUE, combine=FALSE)
+    
+    for (p in seq(length(plotlist))){
+      plotlist[[p]] <- plotlist[[p]] +
+        ggplot2::theme_classic() + 
+        ggplot2::theme(legend.position="none") +
+        ggplot2::ggtitle(NULL) +
+        ggplot2::labs(x="UMAP_1", y="UMAP_2") 
+    }
+    
+    legend <- cowplot::get_legend(
+      plotlist[[3]] + ggplot2::theme(legend.position="bottom")
+    )
+    plotlist[[p+1]] <- legend
+    
+    p2 <- cowplot::plot_grid(plotlist=plotlist)
+    
+    title <- cowplot::ggdraw() + 
+      cowplot::draw_label(
+        gene,
+        fontface = 'bold',
+        x = 0,
+        hjust = 0
+      ) +
+      ggplot2::theme(
+        # add margin on the left of the drawing canvas,
+        # so title is aligned with left edge of first plot
+        plot.margin = ggplot2::margin(0, 0, 0, 7)
+      )
+    
+    print(cowplot::plot_grid(title, p2, ncol=1, rel_heights=c(0.1, 1)))
   } else {
-    glue::glue("skipping gene {gene}")
+    glue::glue("skipping gene {gene} because it was not detected")
   }
 }
 
@@ -310,7 +346,10 @@ genes_of_interest(genes)
 
 ```
 
-```{r}
+
+```{r fig.width=12, fig.height=8}
+
+
 for (gene in genes) {
   gene_of_interest(gene)
 }
@@ -383,6 +422,36 @@ if (length(aav_genes) == 0) {
 for (gene in aav_genes) {
   gene_of_interest(gene)
 }
+
+```
+```{r}
+FeaturePlot(cells, features = aav_genes, 
+            order=TRUE, blend=TRUE, cols=c('lightgray', 'red', 'blue'))
+```
+
+Coexpression of Venus and Cerulean (all cells from all samples):
+
+```{r}
+ FeaturePlot(subset(cells, sample_type== 'LK03C_REDHV' | sample_type== 'LK03V_REDHC'), 
+             reduction='umap', features = aav_genes, 
+            order=TRUE, split.by="sample_type")
+```
+
+For only the LK03C_REDHV samples:
+
+```{r fig.width=7, fig.height=3}
+ FeaturePlot(subset(cells, sample_type== 'LK03C_REDHV'), 
+             reduction='umap', features = aav_genes, 
+            order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
+
+```
+
+For only the LK03V_REDHC samples:
+
+```{r  fig.width=7, fig.height=3}
+ FeaturePlot(subset(cells, sample_type== 'LK03V_REDHC'), 
+             reduction='umap', features = aav_genes, 
+            order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
 
 ```
 

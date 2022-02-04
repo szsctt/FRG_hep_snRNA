@@ -1,0 +1,258 @@
+---
+title: "Aizarani dataset"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(tidyverse)
+
+```
+
+Load Aizarani data
+
+```{r}
+GEO <- readRDS("../data/GEO/GSE124395/GSE124395_Normalhumanliverdata.RData")
+
+
+
+aizarani <- CreateSeuratObject(GEO, project="Aizarani_Healthy", min.cells=3, min.features = 300)
+VlnPlot(aizarani, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+
+#aizarani <- subset(aizarani, subset = nFeature_RNA > 300 & nFeature_RNA < 2500 & percent.mt < 30)
+
+
+# get the cluster ids that correspond to each cell
+paper_clusters <- read.table("../data/GEO/GSE124395/GSE124395_clusterpartition.txt")
+
+# only keep cells which have a cluster assigned in this table
+aizarani[['in.paper.clusters']] <- case_when(
+  colnames(aizarani) %in% rownames(paper_clusters) ~ TRUE,
+  TRUE ~ FALSE
+)
+aizarani <- subset(aizarani, in.paper.clusters)
+
+# assign clusters from paper to metadata column
+paper_clusters_df <- tibble(
+  cellname = rownames(paper_clusters),
+  cluster = paper_clusters$sct.cpart
+)
+
+aizarani_cellnames <- tibble(cellname = colnames(aizarani)) %>% 
+  left_join(paper_clusters_df, by="cellname") 
+
+
+
+aizarani[["paper.clusters"]] <- aizarani_cellnames$cluster
+
+
+```
+
+
+Has this dataset already been filtered?  Not sure why there are so many labels...
+
+Finding varable features:
+
+```{r}
+aizarani <- NormalizeData(aizarani, normalization.method = "LogNormalize", scale.factor = 10000)
+
+aizarani <- FindVariableFeatures(aizarani, selection.method = "vst", nfeatures = 2000)
+
+top10 <- head(VariableFeatures(aizarani), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(aizarani)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+Running PCA:
+
+```{r}
+all.genes <- rownames(aizarani)
+aizarani <- ScaleData (aizarani, features=all.genes)
+
+aizarani <- RunPCA(aizarani, features = VariableFeatures(object = aizarani))
+```
+
+Top two PCR dimensions:
+```{r}
+VizDimLoadings(aizarani, dims = 1:2, reduction = "pca")
+```
+UMAP with clusters:
+```{r}
+aizarani <- FindNeighbors(aizarani, dims = 1:13)
+aizarani <- FindClusters(aizarani, resolution = 0.5)
+aizarani <- RunUMAP(aizarani, dims = 1:30)
+
+DimPlot(aizarani, reduction="umap")
+```
+t-SNE with clusters:
+```{r}
+aizarani <- RunTSNE(aizarani)
+DimPlot(aizarani, reduction="tsne")
+```
+Finding markers for the clusters:
+```{r}
+aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
+```
+
+Top three markers for each cluster:
+```{r}
+aizarani.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 3, order_by = avg_log2FC)
+```
+Figure 1d from the paper looks liks this:
+
+![Figure 1d](../background/aizarani_2019_fig1_heatmap.png)
+
+
+Try to reproduce the heatmap:
+```{r}
+paper_genes  <- c("COL3A1", "CYGB", "ACTA2", "EPCAM", "KRT18", "KRT7", "KRT19", "SOX9", "CFTR", "ALB", "TF", "CPY3A3", "CYP2E1","APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE", "CLEC4G", "CLEC4M", "FLT1", "PECAM", "VWF", "CD34", "KLRB1", "CD8A", "PTPRC", "CD3E", "IGKC", "MZB1", "CD163", "MAFB", "VSIG4")
+DoHeatmap(aizarani, features=paper_genes)
+```
+
+We can try to figure out which of the Seurat clusters correspond to which kinds of cells using Figure 1 from the paper together with the above heatmap.
+
+- 0: NK, NKT, T cells
+- 1: liver sinusoidal endothelial cells
+- 2: EPCAM+ cells and cholangiocytes
+- 3: hepatocytes
+- 4: Kupffer cells
+- 5: hepatocytes
+- 6: NK, NKT, T cells
+- 7: hepatocytes
+- 8: macrovascualar endothelial cells
+- 9: hepatocytes
+- 10: ?
+- 11: ?
+- 12: B cells
+- 13: EPCAM+ cells and cholangiocytes
+- 14: ?
+- 15: ?
+- 16: hepatocytes
+
+
+It's a bit harder to tell what some of the smaller clusters are. 
+
+
+```{r}
+new.cluster.ids <- c("NK, NKT, T cells",
+                     "NK, NKT, T cells",
+                     "liver sinusoidal endothelial cells",
+                     "Kupffer cells",
+                     "hepatocytes",
+                     "EPCAM+ cells and cholangiocytes",
+                     "hepatocytes",
+                     "hepatocytes", 
+                     "macrovascual endothelial cells",
+                     "liver sinusoidal endothelial",
+                     "hepatocytes",
+                     "?",
+                     "?",
+                     "B cells",
+                     "?",
+                     " EPCAM+ cells and cholangiocytes", 
+                     "?",
+                     "?",
+                     "?")
+
+names(new.cluster.ids) <- levels(aizarani)
+aizarani <- RenameIdents(aizarani, new.cluster.ids)
+DimPlot(aizarani, reduction = "umap", pt.size = 0.5) 
+```
+Turns out, the GEO entry also includes the cluster to which each cell was assigned in the original paper.  Have a look at those clusters:
+```{r}
+
+DimPlot(aizarani, reduction = "umap", pt.size = 0.5, group.by = "paper.clusters") 
+```
+
+By comparing figure 1b and 1c, we can assign names to the cluster numbers.  I did this by using the [webapp they made](http://human-liver-cell-atlas.ie-freiburg.mpg.de/) which allowed me to visualise the clusters one by one, and compared this with figure 1b in the paper.
+
+I'm not all that confident about the names that I assigned to clusters 32, 33 and 35, but there aren't too many cells in those clusters so I don't think it's a huge deal.
+
+```{r}
+paper.cluster.names <- tibble(
+  name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothlial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothlial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells"),
+  cluster = seq(length(name))
+)
+
+paper_clusters_df %>% 
+  count(cluster) %>% 
+  left_join(paper.cluster.names, by="cluster") %>% 
+  rename(n_cells = n)
+
+
+aizarani_cellnames <- aizarani_cellnames %>% 
+  left_join(paper.cluster.names, by="cluster")
+
+aizarani[['paper.cluster.names']] <- aizarani_cellnames$name
+```
+
+```{r}
+DimPlot(aizarani, reduction = "umap", pt.size = 0.5, group.by = "paper.cluster.names") 
+```
+These annotations make sense in the sense that the different clusters containing the same kinds of cells are annotated together.
+
+```{r}
+p1 <- DoHeatmap(aizarani, features=paper_genes) + NoLegend()
+p2 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.clusters") + NoLegend()
+p1+p2
+```
+
+## Markers of zonation
+
+In this reference dataset, the authors identify the following genes which indicate zonation:
+
+periportal module 1: ALB and PCK1 (Aizarani: ANPEP)
+centra(/midzonal modules 34 and 24: (literature: CYP1A2, CYP2E1), (Aizarni:  CD14)
+central module 33: GLUL
+
+```{r fig.height = 15, fig.width=15}
+FeaturePlot(aizarani, features = c("ALB", "PCK1", "ANPEP", "CYP1A2", "CYP2E1", "CD14", "GLUL", "APOE"))
+```
+
+
+
+## Integration 
+
+```{r}
+source('workflow.R')
+data.obj <- import_without_mouse()
+
+# apparently need to have return.model=TRUE set, otherwise MapQuery doesn't work
+aizarani.reference <- RunUMAP(aizarani, dims = 1:30, reduction = "pca", return.model = TRUE)
+
+plotlist <- list("ref" = DimPlot(aizarani.reference, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani reference"))
+
+for (d in names(data.obj)) {
+  all.genes <- rownames(data.obj[[d]])
+  data.obj[[d]] <- NormalizeData(data.obj[[d]], normalization.method = "LogNormalize", scale.factor = 10000)
+  
+  data.obj[[d]] <- FindVariableFeatures(data.obj[[d]], selection.method = "vst", nfeatures = 2000)
+  
+  anchors <- FindTransferAnchors(reference=aizarani, query=data.obj[[d]],
+    dims = 1:30, reference.reduction = "pca")
+  
+  data.obj[[d]] <-  MapQuery(anchorset = anchors, 
+                       reference=aizarani.reference,
+                       query=data.obj[[d]], 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+  
+  plotlist[[d]] <- DimPlot(data.obj[[d]], reduction = "ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(d)
+}
+
+cowplot::plot_grid(plotlist=plotlist)
+```
+
+
+```{r}
+sessionInfo()
+```
+
