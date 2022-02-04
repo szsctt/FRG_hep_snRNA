@@ -123,7 +123,7 @@ LK03V_REDHC.filt.NA <- mapHepQuery("LK03V_REDHC", k.filter=NA)
 
 ```
 
-```{r fig.height=7, fig.width=7}
+```{r fig.height=7, fig.width=10}
 
 cowplot::plot_grid(refplot + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
                    hep.filt.200[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10),
@@ -134,6 +134,8 @@ cowplot::plot_grid(refplot + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10),
                    )
 
 ```
+
+Perhaps the integration failing with particular values of k.filter has something to do with how many cell clusters are represented?  The hep dataset, which has the most variablility in cell type, can be integrated with many different values.  For the other datasets, which have few cell types, only a k.filter NA or 200 works.
 
 Also check the counts of each cell type:
 
@@ -167,6 +169,9 @@ for (n in names(lst)) {
   aizarani.counts <- left_join(aizarani.counts, counts, by=c("paper.cluster.names"="cell type"))
 }
 
-aizarani.counts 
+aizarani.counts %>% 
+  knitr::kable()
 ```
 
+
+Try [integrating five references](https://github.com/joeb-liver/Single_Cell_Liver_Atlas/blob/main/Liver_Atlas_Integration.R), and then integrate each dataset with that?
