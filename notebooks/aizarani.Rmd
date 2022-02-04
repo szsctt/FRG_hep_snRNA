@@ -1,6 +1,13 @@
 ---
 title: "Aizarani dataset"
-output: html_document
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -94,15 +101,15 @@ aizarani <- RunTSNE(aizarani)
 DimPlot(aizarani, reduction="tsne")
 ```
 Finding markers for the clusters:
-```{r}
+```{r include=FALSE}
 aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
 ```
 
 Top three markers for each cluster:
 ```{r}
-aizarani.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
+ aizarani.markers %>%
+     group_by(cluster) %>%
+     slice_max(n = 3, order_by = avg_log2FC)
 ```
 Figure 1d from the paper looks liks this:
 
@@ -199,9 +206,10 @@ DimPlot(aizarani, reduction = "umap", pt.size = 0.5, group.by = "paper.cluster.n
 These annotations make sense in the sense that the different clusters containing the same kinds of cells are annotated together.
 
 ```{r}
-p1 <- DoHeatmap(aizarani, features=paper_genes) + NoLegend()
-p2 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.clusters") + NoLegend()
-p1+p2
+p1 <- DoHeatmap(aizarani, features=paper_genes) + NoLegend() + ggtitle("seruat clusters")
+p2 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.clusters") + NoLegend() + ggtitle("paper clusters")
+p3 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.cluster.names") + NoLegend() + ggtitle("paper cell types")
+cowplot::plot_grid(p1, p2, p3)
 ```
 
 ## Markers of zonation
@@ -232,14 +240,13 @@ aizarani.reference <- RunUMAP(aizarani, dims = 1:30, reduction = "pca", return.m
 refplot <- DimPlot(aizarani.reference, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani reference") 
 
 
-mapHepQuery <- function(query_name) {
-  
-  query <- data.obj[[query_name]]
+mapHepQuery <- function(query, k.filter=200) {
   
   query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
   query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
   anchors <-  FindTransferAnchors(reference=aizarani, query=query,
-                                   dims = 1:30, reference.reduction = "pca")
+                                   dims = 1:30, reference.reduction = "pca",
+                                  k.filter=k.filter)
   query <-  MapQuery(anchorset = anchors, 
                        reference=aizarani.reference,
                        query=query, 
@@ -250,7 +257,7 @@ mapHepQuery <- function(query_name) {
 }
 
 #names(data.obj)
-hep1.mapped <- mapHepQuery("hep1")
+hep1.mapped <- mapHepQuery(data.obj[["hep1"]])
 hep1.plot <- DimPlot(hep1.mapped, reduction = "ref.umap", group.by="predicted.paper.cluster.names") + ggtitle("hep1")
 legend <- cowplot::get_legend(refplot)
 #cowplot::plot_grid(refplot, hep1.plot)
@@ -272,7 +279,7 @@ table(hep1.mapped[["predicted.paper.cluster.names"]])
 
 
 ```{r}
-hep2.mapped <- mapHepQuery("hep2")
+hep2.mapped <- mapHepQuery(data.obj[["hep2"]])
 hep2.plot <- DimPlot(hep2.mapped, reduction = "ref.umap", group.by="predicted.paper.cluster.names") +
   ggtitle("hep2")
 ```
@@ -283,13 +290,42 @@ cowplot::plot_grid(refplot + NoLegend(),hep1.plot + NoLegend(), hep2.plot + NoLe
 
 
 ```{r}
-low1.mapped <- mapHepQuery("low1")
-low2.mapped <- mapHepQuery("low2")
 
-high1.mapped <- mapHepQuery("high1")
+#high1.mapped <- mapHepQuery("high1")
 # Error in idx[i, ] <- res[[i]][[1]] : 
 #  number of items to replace is not a multiple of replacement length
+
+# apparently this error can occur sometimes because a sample las a low number of cells
+# https://github.com/carmonalab/STACAS/issues/12
+length(colnames(hep1.mapped))
+
+purrr::map(data.obj, ~length(colnames(.)))
+# but the nubmer of cells is more for high1 than samples that did work (low1, low2)
+
+# try merging high1 and high2 together
+#high <- merge(data.obj[['high1']], data.obj[['high2']])
+#high.mapped <- mapHepQuery(high)
+# Still has the same error
+#Error in idx[i, ] <- res[[i]][[1]] : 
+#  number of items to replace is not a multiple of replacement length
+
+# try instead setting k.filter to NA
+# https://github.com/satijalab/seurat/issues/4803
+
+# this works
+# high1.mapped <- mapHepQuery(data.obj[['high1']], k.filter=100)
+
+merged <- list(
+  'hep' = merge(data.obj[['hep1']], data.obj[['hep2']])
+  'low' = merge(data.obj[['low1']], data.obj[['low2']]),
+  'high' =merge(data.obj[['high']], data.obj[['high2']]),
+  ''
+)
+
+
+data.obj.mapped <- purrr::map(data.obj, ~mapHepQuery(., k.filter=150))
 ```
+
 
 
 ```{r}
