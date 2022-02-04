@@ -10,6 +10,8 @@ output:
     code_folding: hide
 ---
 
+## Aizarani dataset
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(Seurat)
@@ -17,7 +19,7 @@ library(tidyverse)
 
 ```
 
-Load Aizarani data
+Load Aizarani data. I'm using their count matrix 'NormalHumanLiverData' from GEO accession GSE124395.
 
 ```{r}
 GEO <- readRDS("../data/GEO/GSE124395/GSE124395_Normalhumanliverdata.RData")
@@ -300,7 +302,7 @@ hep2.mapped <- mapHepQuery(data.obj[["hep2"]])
 hep2.plot <- DimPlot(hep2.mapped, reduction = "ref.umap", group.by="predicted.paper.cluster.names") +
   ggtitle("hep2")
 ```
-
+Mapping hep1 and hep2:
 ```{r}
 cowplot::plot_grid(refplot + NoLegend(),hep1.plot + NoLegend(), hep2.plot + NoLegend(), legend)
 ```
@@ -332,15 +334,24 @@ purrr::map(data.obj, ~length(colnames(.)))
 # this works
 # high1.mapped <- mapHepQuery(data.obj[['high1']], k.filter=100)
 
+#names(data.obj)
+
 merged <- list(
-  'hep' = merge(data.obj[['hep1']], data.obj[['hep2']])
+  'hep' = merge(data.obj[['hep1']], data.obj[['hep2']]),
   'low' = merge(data.obj[['low1']], data.obj[['low2']]),
-  'high' =merge(data.obj[['high']], data.obj[['high2']]),
-  ''
+  'high' = merge(data.obj[['high1']], data.obj[['high2']]),
+  'LK03C_REDHV' = merge(data.obj[['LK03C_REDHV1']], data.obj[['LK03C_REDHV2']]),
+  'LK03V_REDHC' = merge(data.obj[['LK03V_REDHC1']], data.obj[['LK03V_REDHC2']])
 )
 
 
-data.obj.mapped <- purrr::map(data.obj, ~mapHepQuery(., k.filter=150))
+# mapHepQuery(merged[['hep']], k.filter=150)
+# mapHepQuery(merged[['low']], k.filter=150)
+# mapHepQuery(merged[['high']], k.filter=150)
+# mapHepQuery(merged[['LK03C_REDHV']], k.filter=150)
+# mapHepQuery(merged[['LK03V_REDHC']], k.filter=150)
+# 
+# data.obj.mapped <- purrr::map(merged, ~mapHepQuery(., k.filter=150))
 ```
 
 
