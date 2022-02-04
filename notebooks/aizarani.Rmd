@@ -57,7 +57,9 @@ aizarani[["paper.clusters"]] <- aizarani_cellnames$cluster
 ```
 
 
-Has this dataset already been filtered?  Not sure why there are so many labels...
+Has this dataset already been filtered?  
+
+The names on the x-axis come from the cell names in the data that I downloaded from the GEO.  I'm not sure what they mean, but some of them might refer to clusters?  They mention things like 'CD34'.
 
 Finding varable features:
 
@@ -88,28 +90,39 @@ Top two PCR dimensions:
 VizDimLoadings(aizarani, dims = 1:2, reduction = "pca")
 ```
 UMAP with clusters:
-```{r}
+```{r include=FALSE}
 aizarani <- FindNeighbors(aizarani, dims = 1:13)
 aizarani <- FindClusters(aizarani, resolution = 0.5)
 aizarani <- RunUMAP(aizarani, dims = 1:30)
 
+
+```
+```{r}
 DimPlot(aizarani, reduction="umap")
 ```
+
+
 t-SNE with clusters:
-```{r}
+```{r include=FALSE}
 aizarani <- RunTSNE(aizarani)
+
+```
+
+```{r}
 DimPlot(aizarani, reduction="tsne")
 ```
+
+
 Finding markers for the clusters:
 ```{r include=FALSE}
-aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
+#aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
 ```
 
 Top three markers for each cluster:
 ```{r}
- aizarani.markers %>%
-     group_by(cluster) %>%
-     slice_max(n = 3, order_by = avg_log2FC)
+ # aizarani.markers %>%
+ #     group_by(cluster) %>%
+ #     slice_max(n = 3, order_by = avg_log2FC)
 ```
 Figure 1d from the paper looks liks this:
 
@@ -182,9 +195,9 @@ By comparing figure 1b and 1c, we can assign names to the cluster numbers.  I di
 
 I'm not all that confident about the names that I assigned to clusters 32, 33 and 35, but there aren't too many cells in those clusters so I don't think it's a huge deal.
 
-```{r}
+```{r include=FALSE}
 paper.cluster.names <- tibble(
-  name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothlial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothlial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells"),
+  name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothlial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothlial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells", "Other"),
   cluster = seq(length(name))
 )
 
@@ -209,8 +222,12 @@ These annotations make sense in the sense that the different clusters containing
 p1 <- DoHeatmap(aizarani, features=paper_genes) + NoLegend() + ggtitle("seruat clusters")
 p2 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.clusters") + NoLegend() + ggtitle("paper clusters")
 p3 <- DoHeatmap(aizarani, features=paper_genes, group.by="paper.cluster.names") + NoLegend() + ggtitle("paper cell types")
-cowplot::plot_grid(p1, p2, p3)
+cowplot::plot_grid(p1, p2)
 ```
+```{r fig.height=7, fig.width=7}
+p3
+```
+
 
 ## Markers of zonation
 
