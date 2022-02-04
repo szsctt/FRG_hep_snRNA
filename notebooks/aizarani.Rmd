@@ -160,9 +160,10 @@ new.cluster.ids <- c("NK, NKT, T cells",
                      "?",
                      "?")
 
-names(new.cluster.ids) <- levels(aizarani)
-aizarani <- RenameIdents(aizarani, new.cluster.ids)
-DimPlot(aizarani, reduction = "umap", pt.size = 0.5) 
+
+#names(new.cluster.ids) <- levels(aizarani)
+#aizarani <- RenameIdents(aizarani, new.cluster.ids)
+#DimPlot(aizarani, reduction = "umap", pt.size = 0.5) 
 ```
 Turns out, the GEO entry also includes the cluster to which each cell was assigned in the original paper.  Have a look at those clusters:
 ```{r}
@@ -219,36 +220,75 @@ FeaturePlot(aizarani, features = c("ALB", "PCK1", "ANPEP", "CYP1A2", "CYP2E1", "
 
 ## Integration 
 
-```{r}
+
+Try mapping the sample hep1 onto the Aizarani reference
+```{r include=FALSE}
 source('workflow.R')
 data.obj <- import_without_mouse()
 
 # apparently need to have return.model=TRUE set, otherwise MapQuery doesn't work
 aizarani.reference <- RunUMAP(aizarani, dims = 1:30, reduction = "pca", return.model = TRUE)
 
-plotlist <- list("ref" = DimPlot(aizarani.reference, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani reference"))
+refplot <- DimPlot(aizarani.reference, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani reference") 
 
-for (d in names(data.obj)) {
-  all.genes <- rownames(data.obj[[d]])
-  data.obj[[d]] <- NormalizeData(data.obj[[d]], normalization.method = "LogNormalize", scale.factor = 10000)
+
+mapHepQuery <- function(query_name) {
   
-  data.obj[[d]] <- FindVariableFeatures(data.obj[[d]], selection.method = "vst", nfeatures = 2000)
+  query <- data.obj[[query_name]]
   
-  anchors <- FindTransferAnchors(reference=aizarani, query=data.obj[[d]],
-    dims = 1:30, reference.reduction = "pca")
-  
-  data.obj[[d]] <-  MapQuery(anchorset = anchors, 
+  query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+  query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+  anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+                                   dims = 1:30, reference.reduction = "pca")
+  query <-  MapQuery(anchorset = anchors, 
                        reference=aizarani.reference,
-                       query=data.obj[[d]], 
+                       query=query, 
                        refdata = list(paper.cluster.names="paper.cluster.names",
                                       paper.cluster="paper.clusters"), 
                        reference.reduction="pca",
                        reduction.model = "umap")
-  
-  plotlist[[d]] <- DimPlot(data.obj[[d]], reduction = "ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(d)
 }
 
-cowplot::plot_grid(plotlist=plotlist)
+#names(data.obj)
+hep1.mapped <- mapHepQuery("hep1")
+hep1.plot <- DimPlot(hep1.mapped, reduction = "ref.umap", group.by="predicted.paper.cluster.names") + ggtitle("hep1")
+legend <- cowplot::get_legend(refplot)
+#cowplot::plot_grid(refplot, hep1.plot)
+
+
+
+
+```
+
+```{r}
+cowplot::plot_grid(refplot + NoLegend(), hep1.plot + NoLegend(), legend)
+```
+
+How many of each predicted cell type do we have?
+```{r}
+#hep1.mapped[["predicted.paper.cluster.names"]]
+table(hep1.mapped[["predicted.paper.cluster.names"]])
+```
+
+
+```{r}
+hep2.mapped <- mapHepQuery("hep2")
+hep2.plot <- DimPlot(hep2.mapped, reduction = "ref.umap", group.by="predicted.paper.cluster.names") +
+  ggtitle("hep2")
+```
+
+```{r}
+cowplot::plot_grid(refplot + NoLegend(),hep1.plot + NoLegend(), hep2.plot + NoLegend(), legend)
+```
+
+
+```{r}
+low1.mapped <- mapHepQuery("low1")
+low2.mapped <- mapHepQuery("low2")
+
+high1.mapped <- mapHepQuery("high1")
+# Error in idx[i, ] <- res[[i]][[1]] : 
+#  number of items to replace is not a multiple of replacement length
 ```
 
 
