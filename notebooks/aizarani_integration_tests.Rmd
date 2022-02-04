@@ -1,0 +1,172 @@
+---
+title: "Aizarani integration parameters"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(tidyverse)
+source("workflow.R")
+```
+Exploring the different parameters used for integration of the Aizarani dataset with Marti's.  Sometimes when using the `FindTransferAnchors` function, I get the error:
+```
+Error in idx[i, ] <- res[[i]][[1]] : 
+  number of items to replace is not a multiple of replacement length
+```
+And then R crashes. 
+
+I 
+This seems to depend on the choice of k.filter - some values work for some datasets but not others.
+
+```{r include=FALSE}
+save_file <- "aizarani_integration_test.rds"
+if (!file.exists(save_file)) {
+  print("loading data")
+  aizarani <- import_aizarani()
+  merged <- import_noMouse_merged()
+  saveRDS(list(aizarani, merged), save_file)
+
+  } else {
+  print("importing data")
+  aizarani_list <- readRDS(save_file)
+  aizarani <- aizarani_list[[1]]
+  merged <- aizarani_list[[2]]
+  rm(aizarani_list)
+}
+
+
+
+
+```
+
+```{r include=FALSE}
+mapHepQuery <- function(query_name, k.filter=200) {
+  print(glue::glue("working on {query_name}"))
+  query <- merged[[query_name]]
+  
+  query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+  query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+  anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+                                   dims = 1:30, reference.reduction = "pca",
+                                  k.filter=k.filter)
+  query <-  MapQuery(anchorset = anchors, 
+                       reference=aizarani,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+  p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
+  return(list(p, query))
+  }
+
+
+#mapHepQuery(merged[['high']], k.filter=200)
+# doesn't work
+
+
+#k.filter <- 150
+#mapHepQuery(merged[['high']], k.filter=k.filter)
+# doesn't work
+
+#purrr::map(merged, ~mapHepQuery(., k.filter=NA))
+
+
+# tried values for all merged datasets:
+#200 - didn't work
+#150 - didn't work
+#100 - didn't work
+#300 - didn't work
+#250 -- didn't work
+#NA - works
+#500 - doesn't work
+
+```
+
+How does changing the k.filter affect the results?
+
+```{r include=FALSE}
+refplot <- DimPlot(aizarani, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani reference") 
+```
+
+
+```{r include=FALSE}
+hep.filt.200 <- mapHepQuery("hep", k.filter=200)
+hep.filt.50 <- mapHepQuery("hep", k.filter=50)
+hep.filt.NA <- mapHepQuery("hep", k.filter=NA)
+
+```
+
+
+```{r fig.height=7, fig.width=7}
+
+
+cowplot::plot_grid(refplot + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
+                   hep.filt.200[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
+                   hep.filt.50[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
+                   hep.filt.NA[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10))
+```
+
+Different values of k.filter don't appear to change too much in this graph.
+
+The 'low' sample only seems to run with a k.filter of 200, and the 'high', 'LK03C_REDHV' and 'LK03V_REDHC' samples only appear to run with a k.filter of NA.
+
+What do these datasets look like?
+
+```{r include=FALSE}
+low.filt.200 <- mapHepQuery("low", k.filter=200)
+high.filt.NA <- mapHepQuery("high", k.filter=NA)
+LK03C_REDHV.filt.NA <- mapHepQuery("LK03C_REDHV", k.filter=NA)
+LK03V_REDHC.filt.NA <- mapHepQuery("LK03V_REDHC", k.filter=NA)
+
+
+```
+
+```{r fig.height=7, fig.width=7}
+
+cowplot::plot_grid(refplot + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
+                   hep.filt.200[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10),
+                   low.filt.200[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10), 
+                   high.filt.NA[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10),
+                   LK03C_REDHV.filt.NA[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10),
+                   LK03V_REDHC.filt.NA[[1]] + NoLegend() + xlim(-15, 15) + ylim(-12.5, 10)
+                   )
+
+```
+
+Also check the counts of each cell type:
+
+```{r}
+count_celltypes <- function(seurat_obj, name) {
+  t <- tibble(
+    seurat_obj[[2]][["predicted.paper.cluster.names"]]
+  ) %>% 
+    count(predicted.paper.cluster.names) %>% 
+    setNames(c("cell type", name))
+  
+  return(t)
+}
+
+aizarani.counts <- tibble(aizarani[["paper.cluster.names"]]) %>% 
+  count(paper.cluster.names) %>% 
+  rename(aizarani = n)
+
+lst <- list(
+  "hep.filt.200" = hep.filt.200,
+  'hep.filt.50' = hep.filt.50,
+  'hep.filt.NA' = hep.filt.NA,
+  'low.filt.200' = low.filt.200,
+  'high.filt.NA' = high.filt.NA,
+  'LK03C_REDHV.filt.NA' = LK03C_REDHV.filt.NA,
+  'LK03V_REDHC.filt.NA' = LK03V_REDHC.filt.NA  
+)
+
+for (n in names(lst)) {
+  counts <- count_celltypes(lst[[n]], n)
+  aizarani.counts <- left_join(aizarani.counts, counts, by=c("paper.cluster.names"="cell type"))
+}
+
+aizarani.counts 
+```
+

@@ -125,5 +125,83 @@ import_without_mouse <- function() {
   
 } 
 
+import_noMouse_merged <- function() {
+  
+  data.obj <- import_without_mouse()
+  
+  merged <- list(
+    'hep' = merge(data.obj[['hep1']], data.obj[['hep2']]),
+    'low' = merge(data.obj[['low1']], data.obj[['low2']]),
+    'high' = merge(data.obj[['high1']], data.obj[['high2']]),
+    'LK03C_REDHV' = merge(data.obj[['LK03C_REDHV1']], data.obj[['LK03C_REDHV2']]),
+    'LK03V_REDHC' = merge(data.obj[['LK03V_REDHC1']], data.obj[['LK03V_REDHC2']])
+  )
+  
+  return(merged)
+}
+
+
+import_aizarani <- function() {
+  
+  GEO <- readRDS("../data/GEO/GSE124395/GSE124395_Normalhumanliverdata.RData")
+
+  aizarani <- CreateSeuratObject(GEO, project="Aizarani_Healthy", min.cells=3, min.features = 300)
+  
+  # get the cluster ids that correspond to each cell
+  paper_clusters <- read.table("../data/GEO/GSE124395/GSE124395_clusterpartition.txt")
+  
+  # only keep cells which have a cluster assigned in this table
+  aizarani[['in.paper.clusters']] <- case_when(
+    colnames(aizarani) %in% rownames(paper_clusters) ~ TRUE,
+    TRUE ~ FALSE
+  )
+  aizarani <- subset(aizarani, in.paper.clusters)
+  
+  # assign clusters from paper to metadata column
+  paper_clusters_df <- tibble(
+    cellname = rownames(paper_clusters),
+    cluster = paper_clusters$sct.cpart
+  )
+  
+  aizarani_cellnames <- tibble(cellname = colnames(aizarani)) %>% 
+    left_join(paper_clusters_df, by="cellname") 
+  
+  aizarani[["paper.clusters"]] <- aizarani_cellnames$cluster
+  
+  aizarani <- NormalizeData(aizarani, normalization.method = "LogNormalize", scale.factor = 10000)
+  
+  aizarani <- FindVariableFeatures(aizarani, selection.method = "vst", nfeatures = 2000)
+  
+  all.genes <- rownames(aizarani)
+  aizarani <- ScaleData (aizarani, features=all.genes)
+  
+  aizarani <- RunPCA(aizarani, features = VariableFeatures(object = aizarani))
+  
+  aizarani <- FindNeighbors(aizarani, dims = 1:13)
+
+    aizarani <- FindClusters(aizarani, resolution = 0.5)
+  
+  aizarani<- RunUMAP(aizarani, dims = 1:30, reduction = "pca", return.model = TRUE)
+  
+  paper.cluster.names <- tibble(
+    name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothlial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothlial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells", "Other"),
+    cluster = seq(length(name))
+  )
+  
+  paper_clusters_df %>% 
+    count(cluster) %>% 
+    left_join(paper.cluster.names, by="cluster") %>% 
+    rename(n_cells = n)
+  
+  
+  aizarani_cellnames <- aizarani_cellnames %>% 
+    left_join(paper.cluster.names, by="cluster")
+  
+  aizarani[['paper.cluster.names']] <- aizarani_cellnames$name
+  
+  return(aizarani)
+  
+}
+
 
 #import_one_without_mouse("high1")
