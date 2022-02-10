@@ -204,4 +204,38 @@ import_aizarani <- function() {
 }
 
 
+integrated_with_aizarani <- function() {
+  aizarani <- import_aizarani()
+  merged <- import_noMouse_merged()
+  
+  mapHepQuery <- function(query_name, k.filter=200) {
+    print(glue::glue("working on {query_name}"))
+    query <- merged[[query_name]]
+    
+    query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+    query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+    anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+                                    dims = 1:30, reference.reduction = "pca",
+                                    k.filter=k.filter)
+    query <-  MapQuery(anchorset = anchors, 
+                       reference=aizarani,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+    p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
+    return(list(p, query))
+  }
+  
+  return(list(
+    "aizarani" = aizarani,
+    "hep.filt.200" = mapHepQuery("hep", k.filter=200)[[2]],
+    "low.filt.200" =  mapHepQuery("low", k.filter=200)[[2]],
+    "high.filt.NA" = mapHepQuery("high", k.filter=NA)[[2]],
+    "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA)[[2]],
+    "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)[[2]]
+  ))
+}
+
 #import_one_without_mouse("high1")

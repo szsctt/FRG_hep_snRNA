@@ -1,0 +1,473 @@
+---
+title: "Some visualizations"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+
+## Mapped to Aizarani data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+library(cowplot)
+source("workflow.R")
+```
+
+```{r include=FALSE}
+data <- integrated_with_aizarani()
+reference <- data[['aizarani']]
+queries <- data[names(data) != 'aizarani']
+```
+
+### Aizarani cell types
+The datasets, mapped to the Aizarani dataset:
+
+```{r}
+# custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
+# https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
+
+
+cellTypes <- unique(aizarani$paper.cluster.names)
+myColors <- brewer.pal(length(cellTypes),"Set3")
+names(myColors) <- cellTypes
+colScale <- scale_colour_manual(name = "grp",values = myColors)
+
+
+refplot <- DimPlot(reference, reduction="umap", group.by="paper.cluster.names") + ggtitle("Aizarani") + colScale
+queryplots.aizarani <- purrr::map(names(queries), 
+                       ~DimPlot(queries[[.]], reduction="ref.umap", group.by="predicted.paper.cluster.names") + 
+                         ggtitle(str_split(., "\\.")[[1]][1]) + 
+                         xlim(-15, 15) + 
+                         ylim(-12.5, 10) +
+                         colScale +
+                         NoLegend()
+                       
+                       )
+# https://stackoverflow.com/questions/27130610/legend-on-bottom-two-rows-wrapped-in-ggplot2-in-r
+legend <- cowplot::get_legend(refplot + 
+                                theme(legend.position="bottom", legend.title = element_blank(),) + 
+                                guides(fill=guide_legend(nrow=2,byrow=TRUE))
+                              )
+
+
+aizarani.plots <- plot_grid(plotlist=c(list(refplot + NoLegend()), queryplots.aizarani))
+plot_grid(aizarani.plots, legend, ncol=1, rel_heights = c(1, 0.1))
+```
+
+Just the reference, hepatocytes pre-engraftment, and the 'high' post-engraftment subset
+
+
+```{r}
+
+title_theme <- theme(plot.title=element_text(size=9, hjust=0))
+
+aizarani.plots.selected1 <- plot_grid(refplot + NoLegend() + ggtitle("Aizarani, 2019\nGSE124395\nNormal human liver tissue") + title_theme, 
+                                      queryplots.aizarani[[1]] + ggtitle("Human 'Hepatocyes'\nLonza #181791\nPre-engraftment") + title_theme,
+                                      queryplots.aizarani[[3]] + ggtitle("Human Hepatocyes\nLonza #181791\n5 months Post-engraftment") + title_theme,
+                                      nrow = 1
+                                      )
+
+plot_grid(aizarani.plots.selected1, legend, ncol=1, rel_heights = c(1, 0.1))
+```
+
+Seurat gives a score to the predictions it makes when it maps a query dataset to a reference dataset, a measure of how confident it is in that mapping, which is between 0 and 1.  Here are the distribution of scores for each dataset.
+
+```{r}
+scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.paper.cluster.names.score) %>% 
+  ggplot(aes(x = score)) +
+  geom_histogram() +
+    ggtitle(.)
+  )
+cowplot::plot_grid(plotlist=scorePlots)
+```
+So Seurat is pretty confident about the cell types, but it's less confident about the assignment of some of the assignments in the hepatocytes sample.  Are these the ones that are not hepatocytes?  Make a plot, coloring by score:
+
+```{r}
+hep.score.plot <-  FeaturePlot(queries[[1]], reduction="ref.umap", feature="predicted.paper.cluster.names.score")
+
+cowplot::plot_grid(refplot + NoLegend(), hep.score.plot)
+```
+
+It looks more like the cells with a lower score are spread throughout the cell types.  So perhaps there really are multiple cell types in this sample.
+
+### Aizarani clusters
+
+Now looking at the original clusters in the paper: 
+
+```{r}
+# custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
+# https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
+
+library(scales)
+clusterNames <- unique(aizarani$paper.clusters)
+myColors <- scales::hue_pal()(length(clusterNames))
+names(myColors) <- clusterNames
+colScale <- scale_colour_manual(name = "grp",values = myColors)
+
+
+refplot <- DimPlot(reference, reduction="umap", group.by="paper.clusters") + ggtitle("Aizarani") + colScale
+queryplots.aizarani <- purrr::map(names(queries), 
+                       ~DimPlot(queries[[.]], reduction="ref.umap", group.by="predicted.paper.cluster") + 
+                         ggtitle(str_split(., "\\.")[[1]][1]) + 
+                         xlim(-15, 15) + 
+                         ylim(-12.5, 10) +
+                         NoLegend() +
+                         colScale
+                       
+                       )
+# https://stackoverflow.com/questions/27130610/legend-on-bottom-two-rows-wrapped-in-ggplot2-in-r
+legend <- cowplot::get_legend(refplot + 
+                                theme(legend.position="right", legend.title = element_blank(),) + 
+                                guides(fill=guide_legend(byrow=TRUE, nrow=2))
+                              )
+
+
+aizarani.plots <- plot_grid(plotlist=c(list(refplot + NoLegend()), queryplots.aizarani))
+plot_grid(aizarani.plots, legend, nrow=1, rel_widths = c(1, 0.2))
+```
+
+Cowplot seems to have trouble with the legend, but you get the idea.
+
+We should also check how confident Seurat is in the assignment of query cells to reference clusters.
+
+```{r}
+scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.paper.cluster.score) %>% 
+  ggplot(aes(x = score)) +
+  geom_histogram() +
+    ggtitle(glue::glue("."))
+  )
+cowplot::plot_grid(plotlist=scorePlots)
+```
+
+So it's not all that confident about the assignment of many cells to clusters from the original paper.  Perhaps we shouldn't use these labels.
+
+### Hepatoctyes
+
+Plotting just the hepatocyte subset of all the data, using the original labels from the paper.  The clusters here are also from the original paper (I haven't shown them for the query datasets, since they don't mean that much).
+
+
+
+```{r}
+reference.hep <- DimPlot(subset(reference, paper.cluster.names=="Hepatocytes"),
+                         reduction="umap",
+                         group.by="paper.clusters")
+queries.hep <- purrr::map(names(queries), ~DimPlot(subset(queries[[.]], predicted.paper.cluster.names=="Hepatocytes"), 
+                                                   reduction="ref.umap") + 
+                         ggtitle(str_split(., "\\.")[[1]][1]) + 
+                         xlim(-15, 15) + 
+                         ylim(-12.5, 10) +
+                         colScale +
+                         NoLegend() +
+                         ggtitle(.)
+                         )
+
+names(queries.hep) <- names(queries)
+
+legend <- cowplot::get_legend(reference.hep + theme(legend.position="bottom"))
+aizarani.hep.paper.clust <- cowplot::plot_grid(plotlist=c(list(reference.hep + NoLegend()), queries.hep))
+aizarani.hep.paper.clust  <- cowplot::plot_grid(aizarani.hep.paper.clust, legend, ncol=1, rel_heights = c(1, 0.1))
+aizarani.hep.paper.clust
+```
+
+The 'hepatoctye' cluster seems to contain cells that are far in UMAP space from the main hepatoctye cluster.  So maybe the 'Hepatocyte' label doesn't mean that much.
+
+The data came with cluster number labels, but not cell type. To get the cell type labels, I looked at Figure 1 in the paper and tried to guess which of the seurat clusters corresponded to which of the cluster numbers.  This assumes that the Seurat clusters are the same as the clusters for the paper, but maybe with some of the paper clusters combined to get the seurat ones.  However, it could be that there's a lot of 
+
+### Seurat clusters
+
+Perhaps it might be better to use the Seurat clusters and try to figure out what the cell types are.  These are the Seurat Clusters for the reference dataset:
+
+```{r}
+DimPlot(reference, reduction="umap", label = TRUE, repel = TRUE)
+```
+
+
+Previously I came up with this list: by comparing these two heatmaps:
+
+- 0: NK, NKT, T cells
+- 1: liver sinusoidal endothelial cells
+- 2: EPCAM+ cells and cholangiocytes
+- 3: hepatocytes
+- 4: Kupffer cells
+- 5: hepatocytes
+- 6: NK, NKT, T cells
+- 7: hepatocytes
+- 8: macrovascualar endothelial cells
+- 9: hepatocytes
+- 10: ?
+- 11: ?
+- 12: B cells
+- 13: EPCAM+ cells and cholangiocytes
+- 14: ?
+- 15: ?
+- 16: hepatocytes
+
+
+I did this by looking at these heatmaps and [the companion website for the paper](http://human-liver-cell-atlas.ie-freiburg.mpg.de/):
+
+```{r fig.width=10, fig.height=10}
+paper_genes  <- c("COL3A1", "CYGB", "ACTA2", "EPCAM", "KRT18", "KRT7", "KRT19", "SOX9", "CFTR", "ALB", "TF", "CPY3A3", "CYP2E1","APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE", "CLEC4G", "CLEC4M", "FLT1", "PECAM", "VWF", "CD34", "KLRB1", "CD8A", "PTPRC", "CD3E", "IGKC", "MZB1", "CD163", "MAFB", "VSIG4")
+p1 <- DoHeatmap(reference, features=paper_genes) + NoLegend() + ggtitle("seruat clusters")
+p2 <- DoHeatmap(reference, features=paper_genes, group.by="paper.clusters") + NoLegend() + ggtitle("paper clusters")
+p3 <- DoHeatmap(reference, features=paper_genes, group.by="paper.cluster.names") + NoLegend() + ggtitle("paper cell types")
+cowplot::plot_grid(p1, p2, p3, nrow=1)
+```
+
+
+But what about those clusters that I couldn't figure out (10, 11, 14 and 15)?  Let's assume that the cluster names that I figured out using the previous approach are roughly right:
+
+```{r fig.wdith=5, fig.height=10}
+p1 <- DimPlot(reference, reduction="umap", label = TRUE, repel = TRUE)
+p2 <-  DimPlot(reference, reduction="umap", group.by="paper.cluster.names", label = TRUE, repel = TRUE)
+cowplot::plot_grid(p1 + theme(legend.position="bottom"), p2 + theme(legend.position="bottom"))
+```
+
+
+So probably 10 is Kupfer cells, 11 is B cells, 14 is NK, NKT, T cells (although might be mixed) and 15 is Stellate cells and myofibroblasts.
+
+Let's double-check by looking at these cell types in the paper.
+
+
+- 0: NK, NKT, T cells
+- 1: liver sinusoidal endothelial cells
+- 2: EPCAM+ cells and cholangiocytes
+- 3: hepatocytes
+- 4: Kupffer cells
+- 5: hepatocytes
+- 6: NK, NKT, T cells
+- 7: hepatocytes
+- 8: macrovascualar endothelial cells
+- 9: hepatocytes
+- 10: Kupffer cells
+- 11: B cells
+- 12: ?
+- 13: EPCAM+ cells and cholangiocytes
+- 14: ?
+- 15: ?
+- 16: hepatocytes
+
+#### EPCAM+ cells and cholangiocytes
+
+In Figure 1, EPCAM+ cells and cholangiocytes cells are mainly found (paper) clusters 4, 7, 24 and 39.  In the heatmap, the main marker genes for this cluster are: EPCAM, KRT18, KRT7, KRT19, SOX9.
+
+
+```{r}
+VlnPlot(reference, features=c("EPCAM", "KRT18", "KRT7", "KRT19", "SOX9"))
+```
+
+It looks like the EPCAM+ cell and cholangiocyte clusters are 2 and 13.
+
+#### NK, NKT, T cells 
+
+In Figure 1, NK, NKT, T cells are mainly found (paper) clusters 1, 5, 3, 28, 12.  In the heatmap, the main marker genes for this cluster are: KLRB1, CD8A, PTPRC, CD3E
+
+
+```{r}
+# - cluster 1: CCL5, NKG7, TRCGC1, KLRD1, RUNX3, GNLY, GZMK, GZMH, CST7, TRBC2
+# - cluster 3: IL7R, KLRB1, LTB, CD69, SPOCK2, TNFAIP3, CXCR4, TRAC, TRBC2, TXNIP
+# - cluster 5: CCL4, CCL4L2, IL2RB, NKG7, CCL3L3, CMC1, XCL1, CD7, KLRF1
+# - cluster 12: HSPA1A, HSPA1B, DNAJB1, HSPA6, HSP90AA1, HSPH1, IL2RB, NKG7, CD7, IFNG
+# - cluster 28: SRGN, TNFAIP3, ZFP36L2, AIM1, CREM, CXCR4, RGS1, IL7R, XCL1
+
+  genes.kup <- list(
+"genes.heatmap" =  c("KLRB1", "CD8A", "PTPRC", "CD3E"),
+"genes.1" = c("CCL5", "NKG7", "TRCGC1", "KLRD1", "RUNX3", "GNLY", "GZMK", "GZMH", "CST7", "TRBC2"),
+"genes.3" =  c("IL7R", "KLRB1", "LTB", "CD69", "SPOCK2", "TNFAIP3", "CXCR4", "TRAC", "TRBC2", "TXNIP"),
+"genes.5" = c("CCL4", "CCL4L2", "IL2RB", "NKG7", "CCL3L3", "CMC1", "XCL1", "CD7", "KLRF1"),
+"genes.12" = c("HSPA1A", "HSPA1B", "DNAJB1", "HSPA6", "HSP90AA1", "HSPH1", "IL2RB", "NKG7", "CD7", "IFNG"),
+"genes.28" = c("SRGN", "TNFAIP3", "ZFP36L2", "AIM1", "CREM", "CXCR4", "RGS1", "IL7R", "XCL1")
+)
+
+
+
+genes.kup.paper <- unique(as.character(unlist(genes.kup)))
+
+
+p1 <- DoHeatmap(reference, features=genes.kup.paper) + NoLegend() + ggtitle("seruat clusters")
+
+p2 <- VlnPlot(reference, features=genes.kup[['genes.heatmap']])
+
+p2
+
+#heatmaps <- purrr::map(list(genes.11, genes.17, genes.14, genes.30), ~DoHeatmap(reference, features=.)+NoLegend())
+```
+Looks like the clusters for this cell type are 0, 6 and 14.
+
+
+#### Kupfer cells
+
+In Figure 1 of the paper, Kupfer cells are mainly found in clusters 6, 23, 25, and 31.  The main genes marking this cluster is CD163, MARB and VSIG4.
+
+
+```{r}
+VlnPlot(reference, features=c("CD163", "MARB", "VSIG4"))
+```
+Cluster 10 does look similar to cluster 4.  Also possibly cluter 16?
+
+#### Hepatoctyes
+Just to double-check the hepatocyte clusters (which are the main clusters of interest)
+
+
+Looking at the results in their paper, the likely hepatocyte clusters are 11, 17, 14 and 30.  It's possible that cluster 30 is macrovascular endothelial cells. From [their website](http://human-liver-cell-atlas.ie-freiburg.mpg.de/), it looks like the top genes in each of these clusters (relative to all other cells) are:
+
+ - hepatocyte genes: ALB, TF, CYP3A4, CYP2E1, APOB, ASGR1, PCK1, HP, ASS1, APOE
+
+```{r fig.height=8, fig.width=8}
+VlnPlot(reference, features=c("ALB", "TF", "CYP3A4", "CYP2E1", "APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE"))
+# genes.11 <- c("ALB", "APOH", "CYP3A4", "PCK1", "ALDOB", "TTR", "ADH1B", "ADH4", "GSTA2", "IGFBP1")
+# genes.17 <- c("CYP2E1", "CYP1A2", "CYP4F3", "SERPINA3", "APOB", "FGA", "CYP3A4", "MXLIPL", "HPX", "CP")
+# genes.14 <- c("SAA1", "SAA2", "PLA2G2A", "HP", "APOC3", "ATF5", "HAMP", "FGL1", "FABP1")
+# genes.30 <- c("TNFSF14", "CRP", "CYP4F3", "CYP2B6", "RN7SL403P", "WDR31", "CYP3A5", "NSUN6", "MLXIPL", "ACSM2A")
+
+#genes.hep.paper <- unique(c(genes.11, genes.17, genes.14, genes.30))
+#heatmaps <- purrr::map(list(genes.11, genes.17, genes.14, genes.30), ~DoHeatmap(reference, features=.)+NoLegend())
+
+# DoHeatmap(reference, features=genes.hep.paper) + NoLegend() + ggtitle("seruat clusters")
+```
+Seurat clusters 3, 5, 7 and 9 and 16 are almost certainly hepatocytes.
+
+
+#### Liver sinusoidal endothelial cells (and other endothelial cells)
+
+Endothelial cell markers are: CLEC4G, CLEC4M, FLT1
+
+```{r}
+VlnPlot(reference, features=c("CLEC4G", "CLEC4M", "FLT1"))
+```
+
+Cluster 1, and possibly 8.
+
+
+#### Macrovascular endothelial cells
+
+Markers for this cell type are FLT1, PECAM1, VWF and CD34
+
+```{r}
+VlnPlot(reference, features=c("LT1", "PECAM1", "VWF", "CD34"))
+```
+
+Likely cluster 8.
+
+
+#### B cells
+
+The main markers for B cells are IGKC and MZB1.
+
+```{r}
+VlnPlot(reference, features=c("IGKC", "MZB1"))
+```
+
+Likely cluster 11.
+
+
+#### Other cell types
+
+So far we've assigned:
+
+- 0: NK, NKT, T cells 
+- 1: Liver sinusoidal endothelial cells
+- 2: EPCAM+ cells and cholangiocytes
+- 3: Hepatocytes
+- 4: Kupfer cells
+- 5: Hepatocytes
+- 6: NK, NKT, T cells 
+- 7: Hepatocytes
+- 8: Macrovascular endothelial cells
+- 9: Hepatocytes
+- 10: Kupfer cells
+- 11: B cells
+- 12: ?
+- 13: EPCAM+ cells and cholangiocytes
+- 14: NK, NKT, T cells 
+- 15: ?
+- 16: Kupfer cells? Hepatocytes?
+
+
+To the main types of cells that are visible in the heatmap in Figure 1 of the Aizarani paper.  There are also stellate cells and myofibroblasts, as well as 'other endothelial cells' and 'other'.
+
+
+According to [this website](https://panglaodb.se/markers.html?cell_type=%27Hepatic%20stellate%20cells%27), the genes TPM2, SYP, VCL, TIMP1 and COL1A1 are markers of stellate cells.  Are there any clusters enriched in these genes?
+
+```{r}
+VlnPlot(reference, features = c("TPM2", "SYP", "VCL", "TIMP1", "COL1A1"))
+```
+
+So cluster 15 is likely to be stellate cells and myofibroblasts.
+
+That leaves cluster 12.  Which genes are enriched in this cluster?
+
+```{r}
+cluster12.markers <- FindMarkers(reference, ident.1 = 12, min.pct = 0.25)
+head(cluster12.markers, n = 5)
+```
+
+
+
+[BANK1]((https://panglaodb.se/search.html?query=%22BANK1%22&species=1&tumor=0&nonadult=0), [CD19](https://panglaodb.se/search.html?query=%22CD19%22&species=1&tumor=0&nonadult=0), [CD22](https://panglaodb.se/search.html?query=%22CD19%22&species=1&tumor=0&nonadult=0), [CD79A](https://panglaodb.se/search.html?query=%22CD79A%22&species=1&tumor=0&nonadult=0) and [FAM129C](https://panglaodb.se/search.html?query=%22FAM129C%22&species=1&tumor=0&nonadult=0) are all apparently enriched in B cells, so I'm calling cluster 12 B cells.
+
+Cluster 16 could possibly be hepatocytes or Kupfer cells - can we say anything more by looking at the markers for this cluster?
+
+```{r}
+cluster16.markers <- FindMarkers(reference, ident.1 = 16, min.pct = 0.25)
+head(cluster16.markers, n = 5)
+```
+
+#### Final assignments
+
+Our final cell types are therefore:
+
+- 0: NK, NKT, T cells 
+- 1: Liver sinusoidal endothelial cells
+- 2: EPCAM+ cells and cholangiocytes
+- 3: Hepatocytes
+- 4: Kupfer cells
+- 5: Hepatocytes
+- 6: NK, NKT, T cells 
+- 7: Hepatocytes
+- 8: Macrovascular endothelial cells
+- 9: Hepatocytes
+- 10: Kupfer cells
+- 11: B cells
+- 12: B cells
+- 13: EPCAM+ cells and cholangiocytes
+- 14: NK, NKT, T cells 
+- 15: Stellate cells and myofibroblasts
+- 16: Kupfer cells? Hepatocytes?
+
+It's not clear what cluster 16 is - 
+
+#### Zonation
+
+Checking some possible markers of zonation:
+
+```{r fig.width=10, fig.height=10}
+genes.zonation <- c("GLUL", "CYP2E1", "ASS1", "ALB", "CYP2F2", "CYP1A2", "ARG1", "PCK1", "ASL", "GSTM3", "SDHD")
+FeaturePlot(reference, reduction="umap", features = genes.zonation)
+```
+
+3 - central
+7, 9 - peri-portal
+
+
+GLUL: more central - 3 central, 7, 9, 5 peri-portal
+CYP2E1: lower central and peri-portal, more mid - 5 mid
+ALB: lower central, higher portal: 7 central, 5, 3, 9 portal
+CYPA1: lower central, higher portal: 9 central, 5, 7 portal
+PCK1: lower central, higher portal: central 3, 5, 7, 9 portal
+
+```{r fig.height=10, fig.width=10}
+VlnPlot(subset(reference, seurat_clusters %in% c( 3, 5, 7, 9, 16)), features=genes.zonation)
+```
+
+
+
+
+

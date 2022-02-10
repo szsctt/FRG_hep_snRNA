@@ -175,3 +175,43 @@ aizarani.counts %>%
 
 
 Try [integrating five references](https://github.com/joeb-liver/Single_Cell_Liver_Atlas/blob/main/Liver_Atlas_Integration.R), and then integrate each dataset with that?
+
+## Only hepatocytes
+
+Take the subset of the Aizarani dataset that are lablled as hepatocytes.  Check out the clusters that Aizarani found in this dataset, and try to find our own clusters.
+
+```{r}
+unique(aizarani$paper.cluster.names)
+
+aizarani.hep <- subset(aizarani, paper.cluster.names=="Hepatocytes")
+
+mapHepQuery <- function(reference, query_name, k.filter=200) {
+  print(glue::glue("working on {query_name}"))
+  query <- merged[[query_name]]
+  
+  query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+  query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+  anchors <-  FindTransferAnchors(reference=reference, query=query,
+                                   dims = 1:30, reference.reduction = "pca",
+                                  k.filter=k.filter)
+  query <-  MapQuery(anchorset = anchors, 
+                       reference=reference,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+  p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
+  return(list(p, query))
+}
+
+mapHepQuery(aizarani.hep, "hep", k.filt=NA)
+
+```
+
+Integrating `aizarani.hep` with the hepatocytes sample:
+```
+Error: Please set k.weight to be smaller than the number of anchors (3).
+```
+
+Maybe it's better to integrate first, then take the subset.
