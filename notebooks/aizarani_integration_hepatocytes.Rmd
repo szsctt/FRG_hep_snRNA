@@ -13,11 +13,12 @@ output:
 ## Mapped to Aizarani data
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height=5)
 library(Seurat)
 library(tidyverse)
 library(RColorBrewer)
 library(cowplot)
+library(ggrepel)
 source("workflow.R")
 ```
 
@@ -28,14 +29,14 @@ queries <- data[names(data) != 'aizarani']
 ```
 
 ### Aizarani cell types
-The datasets, mapped to the Aizarani dataset:
+The datasets, mapped to the Aizarani dataset.  Note that here I'm using labels that I inferred from the cluster numbers, which came with the dataset.
 
 ```{r}
 # custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
 # https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
 
 
-cellTypes <- unique(aizarani$paper.cluster.names)
+cellTypes <- unique(reference$paper.cluster.names)
 myColors <- brewer.pal(length(cellTypes),"Set3")
 names(myColors) <- cellTypes
 colScale <- scale_colour_manual(name = "grp",values = myColors)
@@ -107,7 +108,7 @@ Now looking at the original clusters in the paper:
 # https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
 
 library(scales)
-clusterNames <- unique(aizarani$paper.clusters)
+clusterNames <- unique(reference$paper.clusters)
 myColors <- scales::hue_pal()(length(clusterNames))
 names(myColors) <- clusterNames
 colScale <- scale_colour_manual(name = "grp",values = myColors)
@@ -267,48 +268,34 @@ It looks like the EPCAM+ cell and cholangiocyte clusters are 2 and 13.
 
 #### NK, NKT, T cells 
 
-In Figure 1, NK, NKT, T cells are mainly found (paper) clusters 1, 5, 3, 28, 12.  In the heatmap, the main marker genes for this cluster are: KLRB1, CD8A, PTPRC, CD3E
+In Figure 1, NK, NKT, T cells are mainly found (paper) clusters 1, 5, 3, 28, 12.  In the heatmap, the main marker genes for this cluster are: KLRB1, CD8A, PTPRC, CD3E.  Other markers for [NK cells](https://panglaodb.se/markers.html?cell_type=%27NK%20cells%27) are KLRD1 and GNLY, for [NKT cells](https://panglaodb.se/markers.html?cell_type=%27Natural%20killer%20T%20cells%27) are IL2RB, CD44, and [T cells](https://panglaodb.se/markers.html?cell_type=%27T%20cells%27) are TRBC2, CD3D.
 
 
-```{r}
+```{r fig.width=10, fig.height=10}
 # - cluster 1: CCL5, NKG7, TRCGC1, KLRD1, RUNX3, GNLY, GZMK, GZMH, CST7, TRBC2
 # - cluster 3: IL7R, KLRB1, LTB, CD69, SPOCK2, TNFAIP3, CXCR4, TRAC, TRBC2, TXNIP
 # - cluster 5: CCL4, CCL4L2, IL2RB, NKG7, CCL3L3, CMC1, XCL1, CD7, KLRF1
 # - cluster 12: HSPA1A, HSPA1B, DNAJB1, HSPA6, HSP90AA1, HSPH1, IL2RB, NKG7, CD7, IFNG
 # - cluster 28: SRGN, TNFAIP3, ZFP36L2, AIM1, CREM, CXCR4, RGS1, IL7R, XCL1
 
-  genes.kup <- list(
+  genes.t <- list(
 "genes.heatmap" =  c("KLRB1", "CD8A", "PTPRC", "CD3E"),
-"genes.1" = c("CCL5", "NKG7", "TRCGC1", "KLRD1", "RUNX3", "GNLY", "GZMK", "GZMH", "CST7", "TRBC2"),
-"genes.3" =  c("IL7R", "KLRB1", "LTB", "CD69", "SPOCK2", "TNFAIP3", "CXCR4", "TRAC", "TRBC2", "TXNIP"),
-"genes.5" = c("CCL4", "CCL4L2", "IL2RB", "NKG7", "CCL3L3", "CMC1", "XCL1", "CD7", "KLRF1"),
-"genes.12" = c("HSPA1A", "HSPA1B", "DNAJB1", "HSPA6", "HSP90AA1", "HSPH1", "IL2RB", "NKG7", "CD7", "IFNG"),
-"genes.28" = c("SRGN", "TNFAIP3", "ZFP36L2", "AIM1", "CREM", "CXCR4", "RGS1", "IL7R", "XCL1")
+"other.markers" = c("KLRD1", "GNLY", "IL2RB", "CD44", "TRBC2", "CD3D")
 )
 
+VlnPlot(reference, features=c(genes.t[['genes.heatmap']], genes.t[['other.markers']]))
 
-
-genes.kup.paper <- unique(as.character(unlist(genes.kup)))
-
-
-p1 <- DoHeatmap(reference, features=genes.kup.paper) + NoLegend() + ggtitle("seruat clusters")
-
-p2 <- VlnPlot(reference, features=genes.kup[['genes.heatmap']])
-
-p2
-
-#heatmaps <- purrr::map(list(genes.11, genes.17, genes.14, genes.30), ~DoHeatmap(reference, features=.)+NoLegend())
 ```
 Looks like the clusters for this cell type are 0, 6 and 14.
 
 
 #### Kupfer cells
 
-In Figure 1 of the paper, Kupfer cells are mainly found in clusters 6, 23, 25, and 31.  The main genes marking this cluster is CD163, MARB and VSIG4.
+In Figure 1 of the paper, Kupfer cells are mainly found in clusters 6, 23, 25, and 31.  The main genes marking this cluster is CD163, MARB and VSIG4.  [Other markers](https://panglaodb.se/markers.html?cell_type=%27Kupffer%20cells%27) are C1QA, TIMD4, CLEC4F.
 
 
 ```{r}
-VlnPlot(reference, features=c("CD163", "MARB", "VSIG4"))
+VlnPlot(reference, features=c("CD163", "MARB", "VSIG4", "C1QA", "TIMD4", "CLEC4F"))
 ```
 Cluster 10 does look similar to cluster 4.  Also possibly cluter 16?
 
@@ -321,7 +308,8 @@ Looking at the results in their paper, the likely hepatocyte clusters are 11, 17
  - hepatocyte genes: ALB, TF, CYP3A4, CYP2E1, APOB, ASGR1, PCK1, HP, ASS1, APOE
 
 ```{r fig.height=8, fig.width=8}
-VlnPlot(reference, features=c("ALB", "TF", "CYP3A4", "CYP2E1", "APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE"))
+genes.hep <- c("ALB", "TF", "CYP3A4", "CYP2E1", "APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE")
+VlnPlot(reference, features=genes.hep)
 # genes.11 <- c("ALB", "APOH", "CYP3A4", "PCK1", "ALDOB", "TTR", "ADH1B", "ADH4", "GSTA2", "IGFBP1")
 # genes.17 <- c("CYP2E1", "CYP1A2", "CYP4F3", "SERPINA3", "APOB", "FGA", "CYP3A4", "MXLIPL", "HPX", "CP")
 # genes.14 <- c("SAA1", "SAA2", "PLA2G2A", "HP", "APOC3", "ATF5", "HAMP", "FGL1", "FABP1")
@@ -442,32 +430,239 @@ Our final cell types are therefore:
 - 15: Stellate cells and myofibroblasts
 - 16: Kupfer cells? Hepatocytes?
 
-It's not clear what cluster 16 is - 
+It's not clear what cluster 16 is - is it Kupfer cells or hepatocytes?  On the UMAP plot they cluster with the other hepatocyte clusters, so I'll call them hepatocytes.
 
-#### Zonation
+Let's compare these labels in the Aizarani dataset and the hepatocytes dataset with the previous ones that I inferred from the paper.
 
-Checking some possible markers of zonation:
+```{r}
+head(reference$seurat_clusters)
+reference$cell.types <- case_when(
+  reference$seurat_clusters %in% c(0, 6, 14) ~ "NK, NKT, T cells",
+  reference$seurat_clusters == 1 ~ "Liver sinusoidal endothelial cells",
+  reference$seurat_clusters %in% c(2, 13) ~ "EPCAM+ cells and cholangiocytes",
+  reference$seurat_clusters %in% c(3, 5, 7, 9, 16) ~ "Hepatocytes",
+  reference$seurat_clusters %in% c(4, 10) ~ "Kupffer cells",
+  reference$seurat_clusters == 8 ~ "Macrovascular endothelial cells",
+  reference$seurat_clusters %in% c(11, 12) ~ "B cells",
+  reference$seurat_clusters == 15 ~ "Stellate cells and myofibroblasts"
+)
 
-```{r fig.width=10, fig.height=10}
-genes.zonation <- c("GLUL", "CYP2E1", "ASS1", "ALB", "CYP2F2", "CYP1A2", "ARG1", "PCK1", "ASL", "GSTM3", "SDHD")
-FeaturePlot(reference, reduction="umap", features = genes.zonation)
+length(reference$paper.cluster.names )
+sum(reference$paper.cluster.names == reference$cell.types)
 ```
 
-3 - central
-7, 9 - peri-portal
+Of `r length(reference$paper.cluster.names)` cells, `sum(reference$paper.cluster.names == reference$cell.types)` have the same labels.
+
+Are there any cell types that tend to have different labels?
+
+```{r}
+tibble(
+  paper_labels =  reference$paper.cluster.names,
+  my_labels = reference$cell.types
+) %>% 
+  filter(paper_labels != my_labels) %>% 
+  count(paper_labels, my_labels) %>% 
+  arrange(desc(n))
+```
+
+Not particularly?
+
+Let's compare on a UMAP plot:
+
+```{r fig.hight = 4, fig.width=9}
+
+cellTypes <- unique(reference$paper.cluster.names)
+myColors <- brewer.pal(length(cellTypes),"Set3")
+names(myColors) <- cellTypes
+colScale <- scale_colour_manual(name = "",values = myColors)
+
+p1 <- DimPlot(reference, group.by = "cell.types") + colScale
+p2 <- DimPlot(reference, group.by= "paper.cluster.names") + colScale
+legend <- cowplot::get_legend(p1 + theme(legend.position = "bottom"))
+p3 <- cowplot::plot_grid(p1 + NoLegend(), p2 +  NoLegend())
+cowplot::plot_grid(p3, legend, ncol=1, rel_heights = c(1, 0.1))
+```
+Overall I think my labels look better.
 
 
-GLUL: more central - 3 central, 7, 9, 5 peri-portal
-CYP2E1: lower central and peri-portal, more mid - 5 mid
-ALB: lower central, higher portal: 7 central, 5, 3, 9 portal
-CYPA1: lower central, higher portal: 9 central, 5, 7 portal
-PCK1: lower central, higher portal: central 3, 5, 7, 9 portal
 
-```{r fig.height=10, fig.width=10}
-VlnPlot(subset(reference, seurat_clusters %in% c( 3, 5, 7, 9, 16)), features=genes.zonation)
+### Aizarani cell types
+
+Let's try again to map the query datasets with these better labels
+
+```{r fig.width=10}
+# custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
+# https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
+
+
+cellTypes <- unique(reference$cell.types)
+myColors <- brewer.pal(length(cellTypes),"Set1")
+names(myColors) <- cellTypes
+colScale <- scale_colour_manual(name = "grp",values = myColors)
+
+
+refplot <- DimPlot(reference, reduction="umap", group.by="cell.types") + ggtitle("Aizarani") + colScale
+queryplots.aizarani <- purrr::map(names(queries), 
+                       ~DimPlot(queries[[.]], reduction="ref.umap", group.by="predicted.cell.type") + 
+                         ggtitle(str_split(., "\\.")[[1]][1]) + 
+                         xlim(-15, 15) + 
+                         ylim(-12.5, 10) +
+                         colScale +
+                         NoLegend()
+                       
+                       )
+# https://stackoverflow.com/questions/27130610/legend-on-bottom-two-rows-wrapped-in-ggplot2-in-r
+legend <- cowplot::get_legend(refplot + 
+                                theme(legend.position="bottom", legend.title = element_blank(),) + 
+                                guides(fill=guide_legend(nrow=2,byrow=TRUE))
+                              )
+
+
+aizarani.plots <- plot_grid(plotlist=c(list(refplot + NoLegend()), queryplots.aizarani))
+plot_grid(aizarani.plots, legend, ncol=1, rel_heights = c(1, 0.1))
+```
+
+Let's check the scores again:
+
+
+```{r}
+scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.cell.type.score) %>% 
+                           ggplot(aes(x = score)) +
+                           geom_histogram() +
+                           ggtitle(.)
+)
+cowplot::plot_grid(plotlist=scorePlots)
+```
+The scores look better now, too.
+
+Let's zoom in on the cells labelled 'Hepatocytes'.
+
+#### Hepatocytes - zonation
+
+Focusing on the hepatocytes, can we see any hints of zonation in the Aizarani dataset?  If we do, then we can integrate the different hepatocyte datasets with this dataset and see which 
+
+Let's check some of the markers of zonation.  I'm looking at Halpern (2017), figure 1:
+
+![Markers of zonation](../background/halpern_fig1.png)
+So we have Axin2, Cyp12, Gstm3 and Psmd4 as markers of pericentral hepatocytes, and Arg1, Pck1, C2 and Sdhd as markers of periportal hepatocytes.
+
+From Marti, I also have SCD, HMGCS1, ACSS2, ASS1, ARG1, ASL as periportal markers, and GLUL, CYP2E1 as central markers
+
+
+These are our hepatocyte clusters:
+
+```{r}
+
+DimPlot(reference.hep, label=TRUE) + xlim(-15, -5)
+```
+
+Our central markers:
+
+
+```{r fig.height=4, fig.width=10}
+reference.hep <- subset(reference, cell.types=="Hepatocytes")
+
+genes.central <- c("GLUL", "CYP2E1", "ARG1", "AXIN2", "CYP12", "GSTM3", "PSMD4")
+genes.portal <- c("AXIN2", "CYP12", "GSTM3", "PSMD4", "SCD", "HMGCS1", "ACSS2", "ASS1", "ARG1", "ASL")
+
+# feature plots
+plotlist <- FeaturePlot(reference.hep, reduction="umap", features = genes.central, combine=FALSE)
+plotlist <- purrr::map(plotlist, ~. + xlim(-15, -5))
+
+# violin plots
+plotlist <- c(plotlist, VlnPlot(reference.hep, features=genes.central, combine = FALSE))
+plotlist <- purrr::map(plotlist, ~. + NoLegend())
+
+cowplot::plot_grid(plotlist=plotlist, nrow=2)
+```
+
+```{r fig.height=4, fig.width=15}
+# feature plots
+plotlist <- FeaturePlot(reference.hep, reduction="umap", features = genes.portal, combine=FALSE)
+plotlist <- purrr::map(plotlist, ~. + xlim(-15, -5))
+
+# violin plots
+plotlist <- c(plotlist, VlnPlot(reference.hep, features=genes.portal, combine = FALSE))
+plotlist <- purrr::map(plotlist, ~. + NoLegend())
+
+cowplot::plot_grid(plotlist=plotlist, nrow=2)
 ```
 
 
 
+Let's check for marker genes that differentiate each cluster against the other hepatocytes. Here are the top 5 genes that differentiate each cluster from the other hepatocytes:
+
+```{r include=FALSE}
+reference.hep.markers <- FindAllMarkers(reference.hep, only.pos=TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+reference.hep.markers %>% 
+  group_by(cluster) %>% 
+  slice_max(n=5, order_by=avg_log2FC)
+```
+
+I don't see anything obvious in this list.
+
+
+```{r}
+
+pos <- position_jitter(width=0.3, seed=2, height=0)
+
+plotdata <- reference.hep.markers %>% 
+  mutate(sample = "aizarani") %>% 
+  mutate(label = case_when(
+    gene %in% genes.central ~ gene,
+    gene %in% genes.portal ~ gene,
+    TRUE ~ as.character(NA)
+  ) ) %>% 
+  mutate(zone = case_when(
+    gene %in% genes.central ~ "central",
+    gene %in% genes.portal ~ "portal",
+        TRUE ~ as.character(NA)
+  ))
+
+plotdata %>% 
+  ggplot(aes(x=cluster, y=avg_log2FC, label = label, color = zone)) +
+  geom_violin() +
+  geom_point(position = pos, alpha=0.5) +
+  geom_label_repel(position=pos) +
+  geom_point(data = filter(plotdata, !is.na(label)), position=pos)
+```
+
+If these clusters were good indicators of zonation, we might expect to see the central genes being over-represented in one or two clusters, and the portal genes being over-represented in different clusters.  But it looks a lot more like a mix to me.
+
+As a comparison, let's check that the hepatoctye markers correctly identify the hepatocyte clusters:
+
+
+```{r}
+ref.markers <- FindAllMarkers(reference, only.pos=TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+
+pos <- position_jitter(width=0.3, seed=2, height=0)
+
+plotdata <- ref.markers %>% 
+  mutate(label = case_when(
+    gene %in% genes.hep ~ gene,
+    TRUE ~ as.character(NA)
+  ) ) %>% 
+  mutate(cell.type = case_when(
+    gene %in% genes.hep~ "hepatocyte",
+        TRUE ~ as.character(NA)
+  ))
+
+plotdata %>% 
+  ggplot(aes(x=cluster, y=avg_log2FC, color = label)) +
+  geom_violin() +
+  geom_point(position = pos, alpha=0.5) +
+  geom_point(data = filter(plotdata, !is.na(label)), position=pos)
+```
+It's pretty clear that the highest density of colored points is in clusters 3, 5, 7, 9 and 16, although there are a few also in 2 and 13.
+
+```{r}
+sessionInfo()
+```
 
 
