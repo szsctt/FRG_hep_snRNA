@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height=5)
 library(Seurat)
 library(tidyverse)
 library(RColorBrewer)
+library(patchwork)
 library(cowplot)
 library(ggrepel)
 source("workflow.R")
@@ -225,7 +226,7 @@ cowplot::plot_grid(p1, p2, p3, nrow=1)
 
 But what about those clusters that I couldn't figure out (10, 11, 14 and 15)?  Let's assume that the cluster names that I figured out using the previous approach are roughly right:
 
-```{r fig.wdith=5, fig.height=10}
+```{r fig.wdith=10, fig.height=5}
 p1 <- DimPlot(reference, reduction="umap", label = TRUE, repel = TRUE)
 p2 <-  DimPlot(reference, reduction="umap", group.by="paper.cluster.names", label = TRUE, repel = TRUE)
 cowplot::plot_grid(p1 + theme(legend.position="bottom"), p2 + theme(legend.position="bottom"))
@@ -434,7 +435,7 @@ It's not clear what cluster 16 is - is it Kupfer cells or hepatocytes?  On the U
 
 Let's compare these labels in the Aizarani dataset and the hepatocytes dataset with the previous ones that I inferred from the paper.
 
-```{r}
+```{r include=FALSE}
 head(reference$seurat_clusters)
 reference$cell.types <- case_when(
   reference$seurat_clusters %in% c(0, 6, 14) ~ "NK, NKT, T cells",
@@ -451,7 +452,7 @@ length(reference$paper.cluster.names )
 sum(reference$paper.cluster.names == reference$cell.types)
 ```
 
-Of `r length(reference$paper.cluster.names)` cells, `sum(reference$paper.cluster.names == reference$cell.types)` have the same labels.
+Of `r length(reference$paper.cluster.names)` cells, ` rsum(reference$paper.cluster.names == reference$cell.types)` have the same labels.
 
 Are there any cell types that tend to have different labels?
 
@@ -546,21 +547,23 @@ Let's check some of the markers of zonation.  I'm looking at Halpern (2017), fig
 ![Markers of zonation](../background/halpern_fig1.png)
 So we have Axin2, Cyp12, Gstm3 and Psmd4 as markers of pericentral hepatocytes, and Arg1, Pck1, C2 and Sdhd as markers of periportal hepatocytes.
 
-From Marti, I also have SCD, HMGCS1, ACSS2, ASS1, ARG1, ASL as periportal markers, and GLUL, CYP2E1 as central markers
+From Marti, I also have SCD, HMGCS1, ACSS2, ASS1, ARG1, ASL as periportal markers, and GLUL, CYP2E1 as central markers.
 
 
-These are our hepatocyte clusters:
+These are our hepatocyte clusters.
 
 ```{r}
-
+reference.hep <- subset(reference, cell.types=="Hepatocytes")
 DimPlot(reference.hep, label=TRUE) + xlim(-15, -5)
 ```
+
+Can we call any of them 'central' or 'portal'?
 
 Our central markers:
 
 
-```{r fig.height=4, fig.width=10}
-reference.hep <- subset(reference, cell.types=="Hepatocytes")
+```{r fig.height=4, fig.width=10, include=FALSE}
+
 
 genes.central <- c("GLUL", "CYP2E1", "ARG1", "AXIN2", "CYP12", "GSTM3", "PSMD4")
 genes.portal <- c("AXIN2", "CYP12", "GSTM3", "PSMD4", "SCD", "HMGCS1", "ACSS2", "ASS1", "ARG1", "ASL")
@@ -572,11 +575,15 @@ plotlist <- purrr::map(plotlist, ~. + xlim(-15, -5))
 # violin plots
 plotlist <- c(plotlist, VlnPlot(reference.hep, features=genes.central, combine = FALSE))
 plotlist <- purrr::map(plotlist, ~. + NoLegend())
+```
 
+
+```{r fig.height=4, fig.width=10}
 cowplot::plot_grid(plotlist=plotlist, nrow=2)
 ```
 
-```{r fig.height=4, fig.width=15}
+
+```{r include=FALSE}
 # feature plots
 plotlist <- FeaturePlot(reference.hep, reduction="umap", features = genes.portal, combine=FALSE)
 plotlist <- purrr::map(plotlist, ~. + xlim(-15, -5))
@@ -585,10 +592,13 @@ plotlist <- purrr::map(plotlist, ~. + xlim(-15, -5))
 plotlist <- c(plotlist, VlnPlot(reference.hep, features=genes.portal, combine = FALSE))
 plotlist <- purrr::map(plotlist, ~. + NoLegend())
 
-cowplot::plot_grid(plotlist=plotlist, nrow=2)
+
 ```
 
 
+```{r fig.height=4, fig.width=15}
+cowplot::plot_grid(plotlist=plotlist, nrow=2)
+```
 
 Let's check for marker genes that differentiate each cluster against the other hepatocytes. Here are the top 5 genes that differentiate each cluster from the other hepatocytes:
 
@@ -635,11 +645,11 @@ If these clusters were good indicators of zonation, we might expect to see the c
 As a comparison, let's check that the hepatoctye markers correctly identify the hepatocyte clusters:
 
 
-```{r}
+```{r include=FALSE}
 ref.markers <- FindAllMarkers(reference, only.pos=TRUE, min.pct = 0.25, logfc.threshold = 0.25)
 ```
 
-```{r}
+```{r warning=FALSE}
 
 pos <- position_jitter(width=0.3, seed=2, height=0)
 
