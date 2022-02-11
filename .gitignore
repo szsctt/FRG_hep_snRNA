@@ -1,0 +1,8 @@
+notebooks/*html
+notebooks/*rds
+scripts/*sif
+data/GEO/
+data/reads/
+notebooks/aizarani_files/
+scripts/database.conf
+scripts/rstudio-tmp/
