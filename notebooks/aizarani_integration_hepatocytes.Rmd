@@ -10,7 +10,8 @@ output:
     code_folding: hide
 ---
 
-## Mapped to Aizarani data
+## Assigning cell types
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height=5)
@@ -183,7 +184,7 @@ The 'hepatoctye' cluster seems to contain cells that are far in UMAP space from 
 
 The data came with cluster number labels, but not cell type. To get the cell type labels, I looked at Figure 1 in the paper and tried to guess which of the seurat clusters corresponded to which of the cluster numbers.  This assumes that the Seurat clusters are the same as the clusters for the paper, but maybe with some of the paper clusters combined to get the seurat ones.  However, it could be that there's a lot of 
 
-### Seurat clusters
+### Seurat clusters - assigning cell types
 
 Perhaps it might be better to use the Seurat clusters and try to figure out what the cell types are.  These are the Seurat Clusters for the reference dataset:
 
@@ -487,7 +488,7 @@ Overall I think my labels look better.
 
 
 
-### Aizarani cell types
+### Aizarani cell types - better labels
 
 Let's try again to map the query datasets with these better labels
 
@@ -538,7 +539,7 @@ The scores look better now, too.
 
 Let's zoom in on the cells labelled 'Hepatocytes'.
 
-#### Hepatocytes - zonation
+### Hepatocytes - zonation
 
 Focusing on the hepatocytes, can we see any hints of zonation in the Aizarani dataset?  If we do, then we can integrate the different hepatocyte datasets with this dataset and see which 
 
@@ -670,6 +671,85 @@ plotdata %>%
   geom_point(data = filter(plotdata, !is.na(label)), position=pos)
 ```
 It's pretty clear that the highest density of colored points is in clusters 3, 5, 7, 9 and 16, although there are a few also in 2 and 13.
+
+
+### Hepatocytes - pseudotime
+
+First convert the Seurat object to a Monocle 3 object.  The clusters aren't transferred during this process, so we need to cluster again (left graph).  Monocle3 also creates 'partitions', which I think are groups of clusters that are predicted to be the same cell type (right graph).
+
+```{r}
+library(SeuratWrappers)
+library(monocle3)
+options(stringsAsFactors = FALSE)
+
+ref.monocle <- SeuratWrappers::as.cell_data_set(reference)
+ref.monocle <- cluster_cells(ref.monocle)
+p1 <- plot_cells(ref.monocle, show_trajectory_graph = FALSE)
+p2 <- plot_cells(ref.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
+cowplot::plot_grid(p1, p2)
+```
+I tried to learn the trajectory on partition 3 (hepatocytes), but I got an error.  So try a different way:
+```{r}
+# # https://github.com/satijalab/seurat-wrappers/issues/114
+# ref.hep.monocle <- subset(as.Seurat(ref.monocle, assay=NULL), monocle3_partitions == 3)
+# ref.hep.monocle <- as.cell_data_set(ref.hep.monocle)
+# ref.hep.monocle <- learn_graph(ref.hep.monocle)
+# 
+# ## Error in dp_mst_list[[as.numeric(cur_partition)]] : 
+# ##  subscript out of bounds
+# 
+# # seems to not have been solved? https://github.com/cole-trapnell-lab/monocle3/issues/102
+# plot_cells(ref.hep, label_groups_by_cluster = FALSE, label_leaves = FALSE, label_branch_points = FALSE)
+
+```
+
+Taking the hepatocyte subset in Seurat, and converting it to a Monocle3 object:
+```{r}
+ref.hep.monocle <- SeuratWrappers::as.cell_data_set(reference.hep)
+ref.hep.monocle <- cluster_cells(ref.hep.monocle)
+p1 <- plot_cells(ref.hep.monocle, show_trajectory_graph = FALSE)
+p2 <- plot_cells(ref.hep.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
+cowplot::plot_grid(p1, p2)
+```
+Now we only have two partitions.  Let's try learning the trajectory:
+
+```{r}
+ref.hep.monocle <- learn_graph(ref.hep.monocle)
+plot_cells(ref.hep.monocle, label_groups_by_cluster = FALSE, label_leaves = TRUE, label_branch_points = TRUE)
+```
+We're really only interested in the hepatocyte trajectory (clusters 1 and 3), but not too bad.  I'm not sure if the other partition will get in the way or not.  There are some branch points in the trajectory.
+
+To order by psuedotime, we have to pick a principal point - essentially, where pseudotime starts. I think this should be point 1 or 3, but it's not clear which.  Try first point 1:
+
+```{r}
+
+# in theory we can specify the root node, but it seems to throw errors
+order_cells(ref.hep.monocle, root_pr_nodes = 1)
+# Error: All provided root_pr_nodes must be present in the principal graph.
+#ref.hep.monocle@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+#unique(ref.hep.monocle@principal_graph_aux[["UMAP"]])
+
+
+# this is interactive!  won't work for Rmarkdown :(
+ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+```
+
+```{r}
+plot_cells(ref.hep.monocle.1,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           graph_label_size=1.5)
+```
+
+
+We want to find genes that change as a function of pseudotime.
+
+```{r}
+graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+```
+
 
 ```{r}
 sessionInfo()
