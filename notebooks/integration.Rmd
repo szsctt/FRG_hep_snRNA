@@ -4,6 +4,7 @@ author: "Suzanne Scott"
 date: "10/28/2021"
 output:
   html_document:
+    keep_md: true
     df_print: paged
     toc: true
     toc_float:
@@ -17,6 +18,8 @@ params:
 After we have imported and QC'ed the data, we proceed with analysis using Seurat.
 
 ```{r include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
+
 library(Seurat)
 library(dplyr)
 library(patchwork)
@@ -97,13 +100,13 @@ cells[['dataset_ind']] <- purrr::map_chr(colnames(cells),
 
 cells[['dataset_name']] <- purrr::map_chr(colnames(cells), 
                                              ~get_dataset(data.obj, .))
-cells[['sample_type']] <- purrr::map_chr(colnames(cells),
+cells[['dataset_type']] <- purrr::map_chr(colnames(cells),
                                             ~get_sample_type(data.obj, .)
                                          )
-cells[['LK03C_REDHV']] <- ifelse(cells[['sample_type']] == "LK03C_REDHV",
+cells[['LK03C_REDHV']] <- ifelse(cells[['dataset_type']] == "LK03C_REDHV",
                                  "LK03C_REDHV", NA)
 
-cells[['LK03V_REDHC']] <- ifelse(cells[['sample_type']] == "LK03V_REDHC",
+cells[['LK03V_REDHC']] <- ifelse(cells[['dataset_type']] == "LK03V_REDHC",
                                  "LK03V_REDHC", NA)
 ```
 
@@ -180,7 +183,7 @@ DimPlot(cells, reduction="umap", split.by="dataset_name", ncol=5)
 And here I've combined the replicates of the same sample types:
 
 ```{r}
-DimPlot(cells, reduction="umap", split.by="sample_type", ncol=3)
+DimPlot(cells, reduction="umap", split.by="dataset_type", ncol=3)
 ```
 
 
@@ -238,7 +241,7 @@ for (i in unique(cells.meta$seurat_clusters)) {
   
   # check there are more than three cells in all sample types for  this cluster
   doAnalysis <- cells.meta %>% 
-  group_by(sample_type, seurat_clusters) %>% 
+  group_by(dataset_type, seurat_clusters) %>% 
   summarise(count = n()) %>% 
     filter(seurat_clusters == i) %>% 
     pull(count) 
@@ -246,7 +249,7 @@ for (i in unique(cells.meta$seurat_clusters)) {
   doAnalysis <- all(doAnalysis > 3)
   
   if (doAnalysis) {
-  conservedMarkers <- FindConservedMarkers(cells, ident.1 = i, grouping.var = "sample_type", verbose = FALSE) 
+  conservedMarkers <- FindConservedMarkers(cells, ident.1 = i, grouping.var = "dataset_type", verbose = FALSE) 
   
   conservedMarkers <- conservedMarkers %>% 
     mutate(gene = rownames(conservedMarkers)) %>% 
@@ -301,10 +304,10 @@ gene_of_interest <- function(gene) {
   }  
   detected <- any(stringr::str_detect(rownames(cells), gene))
   if (detected) {
-    p1 <- VlnPlot(cells, features = gene, log=TRUE, split.by="sample_type")
+    p1 <- VlnPlot(cells, features = gene, log=TRUE, split.by="dataset_type")
     
     print(p1)
-    plotlist <- FeaturePlot(cells, features = gene, split.by="sample_type", 
+    plotlist <- FeaturePlot(cells, features = gene, split.by="dataset_type", 
                             keep.scale="all", order=TRUE, combine=FALSE)
     
     for (p in seq(length(plotlist))){
@@ -432,15 +435,15 @@ FeaturePlot(cells, features = aav_genes,
 Coexpression of Venus and Cerulean (all cells from all samples):
 
 ```{r}
- FeaturePlot(subset(cells, sample_type== 'LK03C_REDHV' | sample_type== 'LK03V_REDHC'), 
+ FeaturePlot(subset(cells, dataset_type== 'LK03C_REDHV' | dataset_type== 'LK03V_REDHC'), 
              reduction='umap', features = aav_genes, 
-            order=TRUE, split.by="sample_type")
+            order=TRUE, split.by="dataset_type")
 ```
 
 For only the LK03C_REDHV samples:
 
 ```{r fig.width=7, fig.height=3}
- FeaturePlot(subset(cells, sample_type== 'LK03C_REDHV'), 
+ FeaturePlot(subset(cells, dataset_type== 'LK03C_REDHV'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
 
@@ -449,7 +452,7 @@ For only the LK03C_REDHV samples:
 For only the LK03V_REDHC samples:
 
 ```{r  fig.width=7, fig.height=3}
- FeaturePlot(subset(cells, sample_type== 'LK03V_REDHC'), 
+ FeaturePlot(subset(cells, dataset_type== 'LK03V_REDHC'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
 
@@ -458,6 +461,20 @@ For only the LK03V_REDHC samples:
 
 ## Pseudotime
 
+```{r}
+library(SeuratWrappers)
+library(monocle3)
+options(stringsAsFactors = FALSE)
+
+cells.monocle <- as.cell_data_set(cells)
+cells.monocle <- cluster_cells(cells.monocle)
+
+p1 <- plot_cells(cells.monocle, show_trajectory_graph = FALSE)
+p2 <- plot_cells(cells.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
+
+cowplot::plot_grid(p1, p2)
+
+```
 
 
 ## Session info

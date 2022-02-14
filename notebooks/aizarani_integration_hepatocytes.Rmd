@@ -1,8 +1,9 @@
 ---
-title: "Some visualizations"
+title: "Integrating with the Aizarani dataset: part 2"
 output:
   html_document:
     df_print: paged
+    keep_md: true
     toc: true
     toc_float:
       collapsed: false
@@ -14,7 +15,7 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height=5)
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
 library(Seurat)
 library(tidyverse)
 library(RColorBrewer)
@@ -724,31 +725,61 @@ To order by psuedotime, we have to pick a principal point - essentially, where p
 ```{r}
 
 # in theory we can specify the root node, but it seems to throw errors
-order_cells(ref.hep.monocle, root_pr_nodes = 1)
+#order_cells(ref.hep.monocle, root_pr_nodes = 1)
 # Error: All provided root_pr_nodes must be present in the principal graph.
 #ref.hep.monocle@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
 #unique(ref.hep.monocle@principal_graph_aux[["UMAP"]])
 
 
 # this is interactive!  won't work for Rmarkdown :(
-ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+# ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
 ```
 
 ```{r}
-plot_cells(ref.hep.monocle.1,
-           color_cells_by = "pseudotime",
-           label_cell_groups=FALSE,
-           label_leaves=FALSE,
-           label_branch_points=FALSE,
-           graph_label_size=1.5)
+# plot_cells(ref.hep.monocle.1,
+#            color_cells_by = "pseudotime",
+#            label_cell_groups=FALSE,
+#            label_leaves=FALSE,
+#            label_branch_points=FALSE,
+#            graph_label_size=1.5)
 ```
 
 
-We want to find genes that change as a function of pseudotime.
+We want to find genes that change as a function of pseudotime.  There is a function for this, but I can't seem to get it to work
 
 ```{r}
-graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+# graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
 ```
+
+Let's check where our reference datasets lie on this plot.
+
+```{r}
+ref.hep <- as.Seurat(ref.hep.monocle, assay="integrated")
+
+
+mapHepQuery <- function(query_name, k.filter=200) {
+    print(glue::glue("working on {query_name}"))
+    query <- merged[[query_name]]
+    
+    query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+    query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+    anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+                                    dims = 1:30, reference.reduction = "pca",
+                                    k.filter=k.filter)
+    query <-  MapQuery(anchorset = anchors, 
+                       reference=aizarani,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters",
+                                      cell.type="cell.types",
+                                      seurat.cluster="seurat_clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+    p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
+    return(list(p, query))
+  }
+```
+
 
 
 ```{r}
