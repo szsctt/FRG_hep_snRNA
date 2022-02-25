@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update &&\
     apt-get install -y tmux git nano wget build-essential \
     libmysqlclient-dev libgdal-dev \
-     libglpk-dev markdown libboost-all-dev gfortran 
+     libglpk-dev markdown libboost-all-dev gfortran \
      libudunits2-dev  &&\
     rm -rf /var/lib/apt/lists/* 
 
