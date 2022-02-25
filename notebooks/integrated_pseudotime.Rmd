@@ -9,8 +9,6 @@ output:
       collapsed: false
       smooth_scroll: false
     code_folding: hide
-params:
-  include_mouse: false
 ---
 
 Try running `learn_graph` from `Monocle3` on Marti's datasets after integration to find a trajectory.
@@ -23,12 +21,8 @@ library(dplyr)
 library(patchwork)
 source("workflow.R")
 
-if (params$include_mouse) {
-  data.obj <- import_with_mouse()
-} else {
-  data.obj <- import_without_mouse()
-}
 
+data.obj <- import_without_mouse()
 save.file <- glue::glue("../out/Seurat/integrated/mouse-{params$include_mouse}")
 dir.create(dirname(save.file), recursive=TRUE)
 

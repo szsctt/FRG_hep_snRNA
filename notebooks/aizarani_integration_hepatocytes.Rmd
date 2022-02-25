@@ -732,52 +732,121 @@ To order by psuedotime, we have to pick a principal point - essentially, where p
 
 
 # this is interactive!  won't work for Rmarkdown :(
-# ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+ ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
 ```
 
 ```{r}
-# plot_cells(ref.hep.monocle.1,
-#            color_cells_by = "pseudotime",
-#            label_cell_groups=FALSE,
-#            label_leaves=FALSE,
-#            label_branch_points=FALSE,
-#            graph_label_size=1.5)
+plot_cells(ref.hep.monocle.1,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           graph_label_size=1.5)
 ```
 
 
-We want to find genes that change as a function of pseudotime.  There is a function for this, but I can't seem to get it to work
+We want to find genes that change as a function of pseudotime.  Monocle uses a statistic called Moran's I to find genes whose expression varies thorught UMAP space:
+
+> The function graph_test() uses a statistic from spatial autocorrelation analysis called Moran's I, which Cao & Spielmann et al showed to be effective in finding genes that vary in single-cell RNA-seq datasets.  A value of 0 indicates no effect, while +1 indicates perfect positive autocorrelation and suggests that nearby cells have very similar values of a gene's expression. Significant values much less than zero are generally rare. 
+
+Here are the genes that change as a function of pseudotime (p < 0.05), ranked by effect size (Moran's I).
 
 ```{r}
-# graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+hep.pseudotime.genes <- graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+
+hep.pseudotime.genes %>% 
+  filter(q_value < 0.05) %>% 
+  arrange(desc(morans_I))
 ```
 
-Let's check where our reference datasets lie on this plot.
+Plotting some genes that vary along Pseudotime.
 
 ```{r}
-ref.hep <- as.Seurat(ref.hep.monocle, assay="integrated")
+
+# convert back to Seurat
+ref.hep.1 <- as.Seurat(ref.hep.monocle.1, assay=NULL)
+
+# pseudotime isn't carried over, so manuall addit
+# https://github.com/satijalab/seurat/issues/3673
+# check that the cell names are the same for the seurat and monocle objects
+#length(names(monocle3::pseudotime(ref.hep.monocle.1))) == ncol(ref.hep.1)
+#sum(names(monocle3::pseudotime(ref.hep.monocle.1)) == colnames(ref.hep.1)) == ncol(ref.hep.1)
+
+ref.hep.1$monocle3_pseudotime <- monocle3::pseudotime(ref.hep.monocle.1)
+
+```
 
 
+```{r}
+tibble(
+  alb = as.double(ref.hep.1@assays$RNA['ALB']),
+  glul = as.double(ref.hep.1@assays$RNA['GLUL']),
+  cyp1a2 = as.double(ref.hep.1@assays$RNA['CYP1A2']),
+  cyp2e1 = as.double(ref.hep.1@assays$RNA['CYP2E1']),
+#  cyp2f2 = as.double(ref.hep.1@assays$RNA['CYP2F2']),
+  ass1 = as.double(ref.hep.1@assays$RNA['ASS1']),
+  asl = as.double(ref.hep.1@assays$RNA['ASL']),
+#  grstm3 = as.double(ref.hep.1@assays$RNA['GRSTM3']),
+  arg1 = as.double(ref.hep.1@assays$RNA['ARG1']),
+  sdhd = as.double(ref.hep.1@assays$RNA['SDHD']),
+  apoh = as.double(ref.hep.1@assays$RNA['APOH']),
+  saa1 = as.double(ref.hep.1@assays$RNA['SAA1']),  
+  pck1 = as.double(ref.hep.1@assays$RNA['PCK1']),
+  pseudotime = ref.hep.1$monocle3_pseudotime
+) %>% 
+  pivot_longer(alb:pck1, names_to="gene", values_to="count") %>% 
+  filter(count != 0) %>% 
+  ggplot(aes(x = pseudotime, y=count)) +
+  geom_point() +
+  facet_wrap(~gene, scales="free")
+
+
+
+
+```
+
+Let's try mapping the query datasets to the reference and see what their mapped pseudotime is.
+
+
+
+```{r}
+reference.hep$monocle3_pseudotime <- monocle3::pseudotime(ref.hep.monocle.1)
+
+
+merged <- import_noMouse_merged()
 mapHepQuery <- function(query_name, k.filter=200) {
     print(glue::glue("working on {query_name}"))
     query <- merged[[query_name]]
-    
     query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
     query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
-    anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+    
+    DefaultAssay(query) <- "RNA"
+    DefaultAssay(ref.hep.1) <- "RNA"
+    anchors <-  FindTransferAnchors(reference=reference.hep, query=query,
                                     dims = 1:30, reference.reduction = "pca",
                                     k.filter=k.filter)
     query <-  MapQuery(anchorset = anchors, 
-                       reference=aizarani,
+                       reference=reference.hep,
                        query=query, 
                        refdata = list(paper.cluster.names="paper.cluster.names",
                                       paper.cluster="paper.clusters",
                                       cell.type="cell.types",
-                                      seurat.cluster="seurat_clusters"), 
+                                      seurat.cluster="seurat_clusters",
+                                      pseudotime="monocle3_pseudotime"), 
                        reference.reduction="pca",
                        reduction.model = "umap")
-    p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
-    return(list(p, query))
-  }
+    return(query)
+}
+
+
+queries.hep <- list(
+    "aizarani" = ref.hep.1,
+    "hep.filt.200" = mapHepQuery("hep", k.filter=NA),
+    "low.filt.200" =  mapHepQuery("low", k.filter=NA),
+    "high.filt.NA" = mapHepQuery("high", k.filter=NA),
+    "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA),
+    "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)
+  )
 ```
 
 
