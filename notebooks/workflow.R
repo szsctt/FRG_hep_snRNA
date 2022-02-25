@@ -184,7 +184,7 @@ import_aizarani <- function() {
   aizarani<- RunUMAP(aizarani, dims = 1:30, reduction = "pca", return.model = TRUE)
   
   paper.cluster.names <- tibble(
-    name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothlial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothlial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells", "Other"),
+    name = c("NK, NKT, T cells", "Kupffer cells", "NK, NKT, T cells", "EPCAM+ cells and cholangiocytes", "NK, NKT, T cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "B cells", "Liver sinusoidal endothelial cells", "Macrovascular endothelial cells", "Hepatocytes", "NK, NKT, T cells", "Liver sinusoidal endothelial cells", "Hepatocytes", "Other endothelial cells", "Other", "Hepatocytes", "NK, NKT, T cells", "Other", "Liver sinusoidal endothelial cells", "Stellate cells and myofibroblasts", "B cells", "Kupffer cells", "EPCAM+ cells and cholangiocytes", "Kupffer cells", "Other endothelial cells", "Other", "NK, NKT, T cells", "Macrovascular endothelial cells", "Hepatocytes", "Kupffer cells", "NK, NKT, T cells", "Stellate cells and myofibroblasts", "B cells", "Other endothelial cells", "Other", "Other", "B cells", "Other"),
     cluster = seq(length(name))
   )
   
@@ -199,9 +199,56 @@ import_aizarani <- function() {
   
   aizarani[['paper.cluster.names']] <- aizarani_cellnames$name
   
+  aizarani$cell.types <- case_when(
+    aizarani$seurat_clusters %in% c(0, 6, 14) ~ "NK, NKT, T cells",
+    aizarani$seurat_clusters == 1 ~ "Liver sinusoidal endothelial cells",
+    aizarani$seurat_clusters %in% c(2, 13) ~ "EPCAM+ cells and cholangiocytes",
+    aizarani$seurat_clusters %in% c(3, 5, 7, 9, 16) ~ "Hepatocytes",
+    aizarani$seurat_clusters %in% c(4, 10) ~ "Kupffer cells",
+    aizarani$seurat_clusters == 8 ~ "Macrovascular endothelial cells",
+    aizarani$seurat_clusters %in% c(11, 12) ~ "B cells",
+    aizarani$seurat_clusters == 15 ~ "Stellate cells and myofibroblasts"
+  )
+  
   return(aizarani)
   
 }
 
+
+integrated_with_aizarani <- function() {
+  aizarani <- import_aizarani()
+  merged <- import_noMouse_merged()
+  
+  mapHepQuery <- function(query_name, k.filter=200) {
+    print(glue::glue("working on {query_name}"))
+    query <- merged[[query_name]]
+    
+    query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+    query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+    anchors <-  FindTransferAnchors(reference=aizarani, query=query,
+                                    dims = 1:30, reference.reduction = "pca",
+                                    k.filter=k.filter)
+    query <-  MapQuery(anchorset = anchors, 
+                       reference=aizarani,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters",
+                                      cell.type="cell.types",
+                                      seurat.cluster="seurat_clusters"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+    p <- DimPlot(query, reduction="ref.umap", group.by="predicted.paper.cluster.names") + ggtitle(glue::glue("{query_name}, k.filter = {k.filter}"))
+    return(list(p, query))
+  }
+  
+  return(list(
+    "aizarani" = aizarani,
+    "hep.filt.200" = mapHepQuery("hep", k.filter=200)[[2]],
+    "low.filt.200" =  mapHepQuery("low", k.filter=200)[[2]],
+    "high.filt.NA" = mapHepQuery("high", k.filter=NA)[[2]],
+    "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA)[[2]],
+    "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)[[2]]
+  ))
+}
 
 #import_one_without_mouse("high1")
