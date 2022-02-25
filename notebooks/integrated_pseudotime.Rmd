@@ -1,0 +1,102 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+
+Try running `learn_graph` from `Monocle3` on Marti's datasets after integration to find a trajectory.
+
+```{r include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
+
+library(Seurat)
+library(dplyr)
+library(patchwork)
+source("workflow.R")
+
+
+data.obj <- import_without_mouse()
+save.file <- glue::glue("../out/Seurat/integrated/mouse-{params$include_mouse}")
+dir.create(dirname(save.file), recursive=TRUE)
+
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+
+
+# standard workflow
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+```
+
+
+I first integrate the datasets together using Seurat.  The Seurat clusters in the integrated dataset look like this:
+
+```{r fig.height=8, fig.width=6}
+plotlist <- DimPlot(cells, group.by=c("ident", "dataset.type", "dataset.name"), combine=FALSE)
+plotlist <- purrr::map(plotlist, ~. + ggplot2::theme(legend.position = "bottom"))
+cowplot::plot_grid(plotlist=plotlist)
+```
+
+```{r include=FALSE}
+
+library(monocle3)
+library(SeuratWrappers)
+
+cells.monocle <- as.cell_data_set(cells)
+cells.monocle <- cluster_cells(cells.monocle)
+
+p1 <- plot_cells(cells.monocle, show_trajectory_graph = FALSE)
+p2 <- plot_cells(cells.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
+
+
+```
+
+
+
+
+
+These are the monocle clusters
+
+```{r}
+wrap_plots(p1, p2)
+```
+
+```{r}
+cells.monocle <- learn_graph(cells.monocle)
+plot_cells(cells.monocle, label_groups_by_cluster = FALSE, label_leaves = TRUE, label_branch_points = TRUE)
+```
+
+I'm not sure how to interpret this trajectory - it appears to be somewhat circular.  We have to manually define where the trajectory begins to calculate pseudotime, but I'm not sure how to do that.
+
+
+
+
