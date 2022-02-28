@@ -13,7 +13,7 @@ output:
 
 Try running `learn_graph` from `Monocle3` on Marti's datasets after integration to find a trajectory.
 
-```{r include=FALSE}
+```{r importData, include=FALSE}
 knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
 
 library(Seurat)
@@ -60,13 +60,13 @@ cells <- FindClusters(cells, resolution = 0.5)
 
 I first integrate the datasets together using Seurat.  The Seurat clusters in the integrated dataset look like this:
 
-```{r fig.height=8, fig.width=6}
+```{r plotSeuratClust, fig.height=8, fig.width=6}
 plotlist <- DimPlot(cells, group.by=c("ident", "dataset.type", "dataset.name"), combine=FALSE)
 plotlist <- purrr::map(plotlist, ~. + ggplot2::theme(legend.position = "bottom"))
 cowplot::plot_grid(plotlist=plotlist)
 ```
 
-```{r include=FALSE}
+```{r makeMonocleClust include=FALSE}
 
 library(monocle3)
 library(SeuratWrappers)
@@ -86,11 +86,11 @@ p2 <- plot_cells(cells.monocle, color_cells_by = "partition", show_trajectory_gr
 
 These are the monocle clusters
 
-```{r}
+```{r monocleClusters}
 wrap_plots(p1, p2)
 ```
 
-```{r}
+```{r monoclePseudotime}
 cells.monocle <- learn_graph(cells.monocle)
 plot_cells(cells.monocle, label_groups_by_cluster = FALSE, label_leaves = TRUE, label_branch_points = TRUE)
 ```
