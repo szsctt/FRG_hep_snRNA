@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=geneRxCluster_combining-all-data
+#SBATCH --job-name=liver_scRNA_rmarkdown
 #SBATCH --nodes=1 --ntasks=1
 #SBATCH --time=12:00:00
 #SBATCH --mem=50gb
@@ -27,18 +27,18 @@ eval "${RSCRIPT} aizarani.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 2 ]]; then
 
-eval "${SING} ${RSCRIPT} 'aizarani_integration_hepatocytes.Rmd' ${END}"
+eval "${RSCRIPT} aizarani.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 3 ]]; then
 
-eval "${SING} ${RSCRIPT} 'aizarani_integration_tests.Rmd' ${END}"
+eval "${RSCRIPT} aizarani.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 4 ]]; then
 
-eval "${SING} ${RSCRIPT} 'integrated_pseudotime.Rmd' ${END}"
+eval "${RSCRIPT} aizarani.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 5 ]]; then
 
-eval "${SING} ${RSCRIPT} 'integration.Rmd' ${END}"
+eval "${RSCRIPT} aizarani.Rmd"
 
 fi
