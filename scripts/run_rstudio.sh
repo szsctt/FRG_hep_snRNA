@@ -8,7 +8,7 @@ module load singularity
 
 
 if [ ! -e scrna_rstudio.sif ]; then
-	ssh petrichor-login "module load singularity; singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:4"
+	ssh petrichor-login "module load singularity; singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:5"
 fi
 
 TMPDIR=rstudio-tmp # your choice

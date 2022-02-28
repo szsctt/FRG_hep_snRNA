@@ -17,6 +17,7 @@ if [ ! -e scrna_rstudio.sif ]; then
 	echo "finished pulling"
 fi
 
+cd ../notebooks
 mkdir -p rendered
 
 RSCRIPT="singularity exec ../scripts/scrna_rstudio.sif ../scripts/render.R rendered"
