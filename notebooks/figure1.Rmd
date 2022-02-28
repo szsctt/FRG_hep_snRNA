@@ -22,14 +22,12 @@ Reproduce this figure that Marti made with R so that all the plots fit together 
 ## Panel A - portal triad
 
 ```{r}
-a.path <- "../figures/fig1_marti.png"
-a <- image_read(a.path)
-twitter <- ggplot() +
-  background_image(twitter) + coord_fixed()
+a.path <- "../figures/fig1a.png"
+a <- magick::image_read(a.path)
+a <- ggplot() +
+   ggplotify::as.grob(a)
 
 
-
-cowplot::draw_image(a)
 ```
 
 
@@ -39,9 +37,19 @@ cowplot::draw_image(a)
 
 ```{r include=FALSE}
 
-a <- "../figures/fig1_marti.png"
+cache_path <- "cache"
+dir.create(cache_path)
 
-data <- integrated_with_aizarani()
+cache_file <- file.path(cache_path, "integrated_with_aizarani.RDS")
+
+if (!file.exists(cache_file)) {
+  data <- integrated_with_aizarani()
+  saveRDS(data, cache_file)
+} else {
+  data <- readRDS(cache_file)
+}
+
+
 reference <- data[['aizarani']]
 queries <- data[names(data) != 'aizarani']
 ```
@@ -111,6 +119,10 @@ The rest of the figure uses Marti's datasets, integrated against each other.
 
 ```{r include=FALSE}
 
+cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
 data.obj <- import_without_mouse()
 
 ## add column names for later
@@ -137,6 +149,12 @@ cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
 cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
 cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
 cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cache_file)
+} else {
+  cells <- readRDS(cache_path)
+}
+
 ```
 
 
@@ -207,7 +225,8 @@ c_patch
 
 
 ```{r fig.width = 10, fig.height = 5}
-cowplot::plot_grid(b, c, ncol=1)
+ab <- cowplot::plot_grid(a, b, nrow=1)
+cowplot::plot_grid(ab, c, ncol=1)
 ```
 
 
