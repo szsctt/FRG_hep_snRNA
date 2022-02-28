@@ -10,4 +10,5 @@ data/reads/
 notebooks/aizarani_files/
 scripts/database.conf
 scripts/rstudio-tmp/
-
+data/references/
+scripts/.bash_history
