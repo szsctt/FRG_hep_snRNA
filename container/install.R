@@ -1,6 +1,10 @@
 #!/usr/bin/env R
 
-install.packages(c("cowplot", "writexl", "wesanderson", "ggrepel", "DT", "devtools", "sf", "Seurat", "markdown", "rmarkdown", "plotly", "remotes", "R.utils", "magick", "ggimage"))
+install.packages(c("cowplot", "writexl", "wesanderson", "ggrepel", "DT", "devtools", 
+			"sf", "Seurat", "markdown", "rmarkdown", 
+			"plotly", "remotes", "R.utils", "ggplotify",
+			"magick", "ggimage"))
+
 
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")

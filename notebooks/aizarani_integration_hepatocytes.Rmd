@@ -1,8 +1,9 @@
 ---
-title: "Some visualizations"
+title: "Integrating with the Aizarani dataset: part 2"
 output:
   html_document:
     df_print: paged
+    keep_md: true
     toc: true
     toc_float:
       collapsed: false
@@ -14,7 +15,7 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 7, fig.height=5)
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
 library(Seurat)
 library(tidyverse)
 library(RColorBrewer)
@@ -24,7 +25,7 @@ library(ggrepel)
 source("workflow.R")
 ```
 
-```{r include=FALSE}
+```{r loadData, include=FALSE}
 data <- integrated_with_aizarani()
 reference <- data[['aizarani']]
 queries <- data[names(data) != 'aizarani']
@@ -33,7 +34,7 @@ queries <- data[names(data) != 'aizarani']
 ### Aizarani cell types
 The datasets, mapped to the Aizarani dataset.  Note that here I'm using labels that I inferred from the cluster numbers, which came with the dataset.
 
-```{r}
+```{r aizaraniCellTypes}
 # custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
 # https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
 
@@ -68,7 +69,7 @@ plot_grid(aizarani.plots, legend, ncol=1, rel_heights = c(1, 0.1))
 Just the reference, hepatocytes pre-engraftment, and the 'high' post-engraftment subset
 
 
-```{r}
+```{r aizaraniCellTypes2}
 
 title_theme <- theme(plot.title=element_text(size=9, hjust=0))
 
@@ -83,7 +84,7 @@ plot_grid(aizarani.plots.selected1, legend, ncol=1, rel_heights = c(1, 0.1))
 
 Seurat gives a score to the predictions it makes when it maps a query dataset to a reference dataset, a measure of how confident it is in that mapping, which is between 0 and 1.  Here are the distribution of scores for each dataset.
 
-```{r}
+```{r aizaraniCellTypesScores}
 scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.paper.cluster.names.score) %>% 
   ggplot(aes(x = score)) +
   geom_histogram() +
@@ -93,7 +94,7 @@ cowplot::plot_grid(plotlist=scorePlots)
 ```
 So Seurat is pretty confident about the cell types, but it's less confident about the assignment of some of the assignments in the hepatocytes sample.  Are these the ones that are not hepatocytes?  Make a plot, coloring by score:
 
-```{r}
+```{r aizaraniCellTypesScore2}
 hep.score.plot <-  FeaturePlot(queries[[1]], reduction="ref.umap", feature="predicted.paper.cluster.names.score")
 
 cowplot::plot_grid(refplot + NoLegend(), hep.score.plot)
@@ -105,7 +106,7 @@ It looks more like the cells with a lower score are spread throughout the cell t
 
 Now looking at the original clusters in the paper: 
 
-```{r}
+```{r aizaraniClusters }
 # custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
 # https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
 
@@ -141,7 +142,7 @@ Cowplot seems to have trouble with the legend, but you get the idea.
 
 We should also check how confident Seurat is in the assignment of query cells to reference clusters.
 
-```{r}
+```{r aizaraniClustersScores}
 scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.paper.cluster.score) %>% 
   ggplot(aes(x = score)) +
   geom_histogram() +
@@ -158,7 +159,7 @@ Plotting just the hepatocyte subset of all the data, using the original labels f
 
 
 
-```{r}
+```{r aizaraniHepatocytes }
 reference.hep <- DimPlot(subset(reference, paper.cluster.names=="Hepatocytes"),
                          reduction="umap",
                          group.by="paper.clusters")
@@ -188,7 +189,7 @@ The data came with cluster number labels, but not cell type. To get the cell typ
 
 Perhaps it might be better to use the Seurat clusters and try to figure out what the cell types are.  These are the Seurat Clusters for the reference dataset:
 
-```{r}
+```{r AizaraniSeuratClusters}
 DimPlot(reference, reduction="umap", label = TRUE, repel = TRUE)
 ```
 
@@ -216,7 +217,7 @@ Previously I came up with this list: by comparing these two heatmaps:
 
 I did this by looking at these heatmaps and [the companion website for the paper](http://human-liver-cell-atlas.ie-freiburg.mpg.de/):
 
-```{r fig.width=10, fig.height=10}
+```{r AizaraniSeuratClustersHeatmap, fig.width=10, fig.height=10}
 paper_genes  <- c("COL3A1", "CYGB", "ACTA2", "EPCAM", "KRT18", "KRT7", "KRT19", "SOX9", "CFTR", "ALB", "TF", "CPY3A3", "CYP2E1","APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE", "CLEC4G", "CLEC4M", "FLT1", "PECAM", "VWF", "CD34", "KLRB1", "CD8A", "PTPRC", "CD3E", "IGKC", "MZB1", "CD163", "MAFB", "VSIG4")
 p1 <- DoHeatmap(reference, features=paper_genes) + NoLegend() + ggtitle("seruat clusters")
 p2 <- DoHeatmap(reference, features=paper_genes, group.by="paper.clusters") + NoLegend() + ggtitle("paper clusters")
@@ -227,7 +228,7 @@ cowplot::plot_grid(p1, p2, p3, nrow=1)
 
 But what about those clusters that I couldn't figure out (10, 11, 14 and 15)?  Let's assume that the cluster names that I figured out using the previous approach are roughly right:
 
-```{r fig.wdith=10, fig.height=5}
+```{r AizaraniSeuratClusters2, fig.wdith=10, fig.height=5}
 p1 <- DimPlot(reference, reduction="umap", label = TRUE, repel = TRUE)
 p2 <-  DimPlot(reference, reduction="umap", group.by="paper.cluster.names", label = TRUE, repel = TRUE)
 cowplot::plot_grid(p1 + theme(legend.position="bottom"), p2 + theme(legend.position="bottom"))
@@ -262,7 +263,7 @@ Let's double-check by looking at these cell types in the paper.
 In Figure 1, EPCAM+ cells and cholangiocytes cells are mainly found (paper) clusters 4, 7, 24 and 39.  In the heatmap, the main marker genes for this cluster are: EPCAM, KRT18, KRT7, KRT19, SOX9.
 
 
-```{r}
+```{r AizaraniEPCAM}
 VlnPlot(reference, features=c("EPCAM", "KRT18", "KRT7", "KRT19", "SOX9"))
 ```
 
@@ -273,7 +274,7 @@ It looks like the EPCAM+ cell and cholangiocyte clusters are 2 and 13.
 In Figure 1, NK, NKT, T cells are mainly found (paper) clusters 1, 5, 3, 28, 12.  In the heatmap, the main marker genes for this cluster are: KLRB1, CD8A, PTPRC, CD3E.  Other markers for [NK cells](https://panglaodb.se/markers.html?cell_type=%27NK%20cells%27) are KLRD1 and GNLY, for [NKT cells](https://panglaodb.se/markers.html?cell_type=%27Natural%20killer%20T%20cells%27) are IL2RB, CD44, and [T cells](https://panglaodb.se/markers.html?cell_type=%27T%20cells%27) are TRBC2, CD3D.
 
 
-```{r fig.width=10, fig.height=10}
+```{r AizaraniN_NK_NKT, fig.width=10, fig.height=10}
 # - cluster 1: CCL5, NKG7, TRCGC1, KLRD1, RUNX3, GNLY, GZMK, GZMH, CST7, TRBC2
 # - cluster 3: IL7R, KLRB1, LTB, CD69, SPOCK2, TNFAIP3, CXCR4, TRAC, TRBC2, TXNIP
 # - cluster 5: CCL4, CCL4L2, IL2RB, NKG7, CCL3L3, CMC1, XCL1, CD7, KLRF1
@@ -296,7 +297,7 @@ Looks like the clusters for this cell type are 0, 6 and 14.
 In Figure 1 of the paper, Kupfer cells are mainly found in clusters 6, 23, 25, and 31.  The main genes marking this cluster is CD163, MARB and VSIG4.  [Other markers](https://panglaodb.se/markers.html?cell_type=%27Kupffer%20cells%27) are C1QA, TIMD4, CLEC4F.
 
 
-```{r}
+```{r AizaraniKupfer}
 VlnPlot(reference, features=c("CD163", "MARB", "VSIG4", "C1QA", "TIMD4", "CLEC4F"))
 ```
 Cluster 10 does look similar to cluster 4.  Also possibly cluter 16?
@@ -309,7 +310,7 @@ Looking at the results in their paper, the likely hepatocyte clusters are 11, 17
 
  - hepatocyte genes: ALB, TF, CYP3A4, CYP2E1, APOB, ASGR1, PCK1, HP, ASS1, APOE
 
-```{r fig.height=8, fig.width=8}
+```{r AizaraniHepatocytes, fig.height=8, fig.width=8}
 genes.hep <- c("ALB", "TF", "CYP3A4", "CYP2E1", "APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE")
 VlnPlot(reference, features=genes.hep)
 # genes.11 <- c("ALB", "APOH", "CYP3A4", "PCK1", "ALDOB", "TTR", "ADH1B", "ADH4", "GSTA2", "IGFBP1")
@@ -329,7 +330,7 @@ Seurat clusters 3, 5, 7 and 9 and 16 are almost certainly hepatocytes.
 
 Endothelial cell markers are: CLEC4G, CLEC4M, FLT1
 
-```{r}
+```{r AizaraniEndothelial}
 VlnPlot(reference, features=c("CLEC4G", "CLEC4M", "FLT1"))
 ```
 
@@ -340,7 +341,7 @@ Cluster 1, and possibly 8.
 
 Markers for this cell type are FLT1, PECAM1, VWF and CD34
 
-```{r}
+```{r AizaraniMacrovascularEndothelial}
 VlnPlot(reference, features=c("LT1", "PECAM1", "VWF", "CD34"))
 ```
 
@@ -351,7 +352,7 @@ Likely cluster 8.
 
 The main markers for B cells are IGKC and MZB1.
 
-```{r}
+```{r AizaraniBcells}
 VlnPlot(reference, features=c("IGKC", "MZB1"))
 ```
 
@@ -386,7 +387,7 @@ To the main types of cells that are visible in the heatmap in Figure 1 of the Ai
 
 According to [this website](https://panglaodb.se/markers.html?cell_type=%27Hepatic%20stellate%20cells%27), the genes TPM2, SYP, VCL, TIMP1 and COL1A1 are markers of stellate cells.  Are there any clusters enriched in these genes?
 
-```{r}
+```{r AizaraniStellate}
 VlnPlot(reference, features = c("TPM2", "SYP", "VCL", "TIMP1", "COL1A1"))
 ```
 
@@ -394,7 +395,7 @@ So cluster 15 is likely to be stellate cells and myofibroblasts.
 
 That leaves cluster 12.  Which genes are enriched in this cluster?
 
-```{r}
+```{r AizaraniSeuratCluster12}
 cluster12.markers <- FindMarkers(reference, ident.1 = 12, min.pct = 0.25)
 head(cluster12.markers, n = 5)
 ```
@@ -405,7 +406,7 @@ head(cluster12.markers, n = 5)
 
 Cluster 16 could possibly be hepatocytes or Kupfer cells - can we say anything more by looking at the markers for this cluster?
 
-```{r}
+```{r AizaraniSeuratCluster16}
 cluster16.markers <- FindMarkers(reference, ident.1 = 16, min.pct = 0.25)
 head(cluster16.markers, n = 5)
 ```
@@ -471,7 +472,7 @@ Not particularly?
 
 Let's compare on a UMAP plot:
 
-```{r fig.hight = 4, fig.width=9}
+```{r AizaraniCompareMyAnnotationsWithPaper, fig.hight = 4, fig.width=9}
 
 cellTypes <- unique(reference$paper.cluster.names)
 myColors <- brewer.pal(length(cellTypes),"Set3")
@@ -492,7 +493,7 @@ Overall I think my labels look better.
 
 Let's try again to map the query datasets with these better labels
 
-```{r fig.width=10}
+```{r mappedToAizarani, fig.width=10}
 # custom colors so that we have the same colors for the same clusters in each plot, regardless of which clusters are in each plot
 # https://stackoverflow.com/questions/6919025/how-to-assign-colors-to-categorical-variables-in-ggplot2-that-have-stable-mappin
 
@@ -527,7 +528,7 @@ plot_grid(aizarani.plots, legend, ncol=1, rel_heights = c(1, 0.1))
 Let's check the scores again:
 
 
-```{r}
+```{r mappedToAizaraniScores}
 scorePlots <- purrr::map(names(queries), ~tibble(score = queries[[.]]$predicted.cell.type.score) %>% 
                            ggplot(aes(x = score)) +
                            geom_histogram() +
@@ -553,7 +554,7 @@ From Marti, I also have SCD, HMGCS1, ACSS2, ASS1, ARG1, ASL as periportal marker
 
 These are our hepatocyte clusters.
 
-```{r}
+```{r AizaraniHepatocytes}
 reference.hep <- subset(reference, cell.types=="Hepatocytes")
 DimPlot(reference.hep, label=TRUE) + xlim(-15, -5)
 ```
@@ -724,14 +725,14 @@ To order by psuedotime, we have to pick a principal point - essentially, where p
 ```{r}
 
 # in theory we can specify the root node, but it seems to throw errors
-order_cells(ref.hep.monocle, root_pr_nodes = 1)
+#order_cells(ref.hep.monocle, root_pr_nodes = 1)
 # Error: All provided root_pr_nodes must be present in the principal graph.
 #ref.hep.monocle@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
 #unique(ref.hep.monocle@principal_graph_aux[["UMAP"]])
 
 
 # this is interactive!  won't work for Rmarkdown :(
-ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+ ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
 ```
 
 ```{r}
@@ -744,11 +745,110 @@ plot_cells(ref.hep.monocle.1,
 ```
 
 
-We want to find genes that change as a function of pseudotime.
+We want to find genes that change as a function of pseudotime.  Monocle uses a statistic called Moran's I to find genes whose expression varies thorught UMAP space:
+
+> The function graph_test() uses a statistic from spatial autocorrelation analysis called Moran's I, which Cao & Spielmann et al showed to be effective in finding genes that vary in single-cell RNA-seq datasets.  A value of 0 indicates no effect, while +1 indicates perfect positive autocorrelation and suggests that nearby cells have very similar values of a gene's expression. Significant values much less than zero are generally rare. 
+
+Here are the genes that change as a function of pseudotime (p < 0.05), ranked by effect size (Moran's I).
 
 ```{r}
-graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+hep.pseudotime.genes <- graph_test(ref.hep.monocle.1, neighbor_graph="principal_graph", cores=4)
+
+hep.pseudotime.genes %>% 
+  filter(q_value < 0.05) %>% 
+  arrange(desc(morans_I))
 ```
+
+Plotting some genes that vary along Pseudotime.
+
+```{r}
+
+# convert back to Seurat
+ref.hep.1 <- as.Seurat(ref.hep.monocle.1, assay=NULL)
+
+# pseudotime isn't carried over, so manuall addit
+# https://github.com/satijalab/seurat/issues/3673
+# check that the cell names are the same for the seurat and monocle objects
+#length(names(monocle3::pseudotime(ref.hep.monocle.1))) == ncol(ref.hep.1)
+#sum(names(monocle3::pseudotime(ref.hep.monocle.1)) == colnames(ref.hep.1)) == ncol(ref.hep.1)
+
+ref.hep.1$monocle3_pseudotime <- monocle3::pseudotime(ref.hep.monocle.1)
+
+```
+
+
+```{r}
+tibble(
+  alb = as.double(ref.hep.1@assays$RNA['ALB']),
+  glul = as.double(ref.hep.1@assays$RNA['GLUL']),
+  cyp1a2 = as.double(ref.hep.1@assays$RNA['CYP1A2']),
+  cyp2e1 = as.double(ref.hep.1@assays$RNA['CYP2E1']),
+#  cyp2f2 = as.double(ref.hep.1@assays$RNA['CYP2F2']),
+  ass1 = as.double(ref.hep.1@assays$RNA['ASS1']),
+  asl = as.double(ref.hep.1@assays$RNA['ASL']),
+#  grstm3 = as.double(ref.hep.1@assays$RNA['GRSTM3']),
+  arg1 = as.double(ref.hep.1@assays$RNA['ARG1']),
+  sdhd = as.double(ref.hep.1@assays$RNA['SDHD']),
+  apoh = as.double(ref.hep.1@assays$RNA['APOH']),
+  saa1 = as.double(ref.hep.1@assays$RNA['SAA1']),  
+  pck1 = as.double(ref.hep.1@assays$RNA['PCK1']),
+  pseudotime = ref.hep.1$monocle3_pseudotime
+) %>% 
+  pivot_longer(alb:pck1, names_to="gene", values_to="count") %>% 
+  filter(count != 0) %>% 
+  ggplot(aes(x = pseudotime, y=count)) +
+  geom_point() +
+  facet_wrap(~gene, scales="free")
+
+
+
+
+```
+
+Let's try mapping the query datasets to the reference and see what their mapped pseudotime is.
+
+
+
+```{r}
+reference.hep$monocle3_pseudotime <- monocle3::pseudotime(ref.hep.monocle.1)
+
+
+merged <- import_noMouse_merged()
+mapHepQuery <- function(query_name, k.filter=200) {
+    print(glue::glue("working on {query_name}"))
+    query <- merged[[query_name]]
+    query <- NormalizeData(query, normalization.method = "LogNormalize", scale.factor = 10000)
+    query <- FindVariableFeatures(query, selection.method = "vst", nfeatures = 2000)
+    
+    DefaultAssay(query) <- "RNA"
+    DefaultAssay(ref.hep.1) <- "RNA"
+    anchors <-  FindTransferAnchors(reference=reference.hep, query=query,
+                                    dims = 1:30, reference.reduction = "pca",
+                                    k.filter=k.filter)
+    query <-  MapQuery(anchorset = anchors, 
+                       reference=reference.hep,
+                       query=query, 
+                       refdata = list(paper.cluster.names="paper.cluster.names",
+                                      paper.cluster="paper.clusters",
+                                      cell.type="cell.types",
+                                      seurat.cluster="seurat_clusters",
+                                      pseudotime="monocle3_pseudotime"), 
+                       reference.reduction="pca",
+                       reduction.model = "umap")
+    return(query)
+}
+
+
+queries.hep <- list(
+    "aizarani" = ref.hep.1,
+    "hep.filt.200" = mapHepQuery("hep", k.filter=NA),
+    "low.filt.200" =  mapHepQuery("low", k.filter=NA),
+    "high.filt.NA" = mapHepQuery("high", k.filter=NA),
+    "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA),
+    "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)
+  )
+```
+
 
 
 ```{r}

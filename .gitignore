@@ -1,3 +1,7 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
 notebooks/*html
 notebooks/*rds
 scripts/*sif
@@ -6,3 +10,5 @@ data/reads/
 notebooks/aizarani_files/
 scripts/database.conf
 scripts/rstudio-tmp/
+data/references/
+scripts/.bash_history
