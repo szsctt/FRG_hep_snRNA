@@ -17,6 +17,7 @@ if [ ! -e scrna_rstudio.sif ]; then
 	echo "finished pulling"
 fi
 
+cd ../notebooks
 mkdir -p rendered
 
 RSCRIPT="singularity exec ../scripts/scrna_rstudio.sif ../scripts/render.R rendered"
@@ -27,18 +28,18 @@ eval "${RSCRIPT} aizarani.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 2 ]]; then
 
-eval "${RSCRIPT} aizarani.Rmd"
+eval "${RSCRIPT} aizarani_integration_hepatocytes.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 3 ]]; then
 
-eval "${RSCRIPT} aizarani.Rmd"
+eval "${RSCRIPT} integrated_pseudotime.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 4 ]]; then
 
-eval "${RSCRIPT} aizarani.Rmd"
+eval "${RSCRIPT} integration.Rmd"
 
 elif [[ ${SLURM_ARRAY_TASK_ID} -eq 5 ]]; then
 
-eval "${RSCRIPT} aizarani.Rmd"
+eval "${RSCRIPT} aizarani_integration_tests.Rmd"
 
 fi

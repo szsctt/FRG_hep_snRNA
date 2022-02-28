@@ -66,7 +66,7 @@ plotlist <- purrr::map(plotlist, ~. + ggplot2::theme(legend.position = "bottom")
 cowplot::plot_grid(plotlist=plotlist)
 ```
 
-```{r makeMonocleClust include=FALSE}
+```{r makeMonocleClust, include=FALSE}
 
 library(monocle3)
 library(SeuratWrappers)

@@ -442,7 +442,7 @@ Coexpression of Venus and Cerulean (all cells from all samples):
 
 For only the LK03C_REDHV samples:
 
-```{r AAVExprJoint_LK03C_REDHV fig.width=7, fig.height=3}
+```{r AAVExprJoint_LK03C_REDHV, fig.width=7, fig.height=3}
  FeaturePlot(subset(cells, dataset_type== 'LK03C_REDHV'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))

@@ -310,7 +310,7 @@ Looking at the results in their paper, the likely hepatocyte clusters are 11, 17
 
  - hepatocyte genes: ALB, TF, CYP3A4, CYP2E1, APOB, ASGR1, PCK1, HP, ASS1, APOE
 
-```{r AizaraniHepatocytes, fig.height=8, fig.width=8}
+```{r AizaraniHepatocytes2, fig.height=8, fig.width=8}
 genes.hep <- c("ALB", "TF", "CYP3A4", "CYP2E1", "APOB", "ASGR1", "PCK1", "HP", "ASS1", "APOE")
 VlnPlot(reference, features=genes.hep)
 # genes.11 <- c("ALB", "APOH", "CYP3A4", "PCK1", "ALDOB", "TTR", "ADH1B", "ADH4", "GSTA2", "IGFBP1")
@@ -554,7 +554,7 @@ From Marti, I also have SCD, HMGCS1, ACSS2, ASS1, ARG1, ASL as periportal marker
 
 These are our hepatocyte clusters.
 
-```{r AizaraniHepatocytes}
+```{r AizaraniHepatocytes3}
 reference.hep <- subset(reference, cell.types=="Hepatocytes")
 DimPlot(reference.hep, label=TRUE) + xlim(-15, -5)
 ```
