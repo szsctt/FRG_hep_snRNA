@@ -39,7 +39,7 @@ dir.create(dirname(save.file), recursive=TRUE)
 
 Next, we normalise the data, using a "LogNormalize' method.  Also, analysis in Seurat focuses on a subset of genes that exhibit high cell-to-cell variation in the dataset (highly expressed in some cells, lowly expressed in others).  The next step is to identify these genes.
 
-```{r include=FALSE}
+```{r normalize, include=FALSE}
 
 for (d in names(data.obj)) {
   all.genes <- rownames(data.obj[[d]])
@@ -52,7 +52,7 @@ for (d in names(data.obj)) {
 
 Plot these features for each dataset
 
-```{r fig.width=25, fig.height=15, warning=FALSE}
+```{r variableGenes, fig.width=25, fig.height=15, warning=FALSE}
 plotlist = list()
 for (sample in names(data.obj)) {
   top5 <- head(VariableFeatures(data.obj[[sample]]), 5)
@@ -68,7 +68,7 @@ cowplot::plot_grid(plotlist = plotlist)
 
 At this point, we can combine the datasets by finding integration anchors.  These are cross-dataset pairs of cells that are in a matched biological state ('anchors') that can be used to correct for both technical differences between datasets (i.e. batch effect correction) and to perform comparative analysis across experimental conditions.
 
-```{r include=FALSE}
+```{r integrate, include=FALSE}
 features <- SelectIntegrationFeatures(object.list = data.obj)
 anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
 cells <- IntegrateData(anchorset = anchors, dims=1:30)
@@ -76,7 +76,7 @@ DefaultAssay(cells) <- "integrated"
 ```
 
 
-```{r}
+```{r annotateIntegrated}
 get_dataset <- function(data_obj, barcode) {
   barcode_check <- stringr::str_split(barcode, "_")[[1]][2]
   return(names(data_obj)[as.integer(barcode_check)])
@@ -116,7 +116,7 @@ cells[['LK03V_REDHC']] <- ifelse(cells[['dataset_type']] == "LK03V_REDHC",
 We next run the standard Seurat workflow on the integrated data. First we scale the data, then we run PCA on the data.
 
 
-```{r}
+```{r PCA}
 
 # Run the standard workflow for visualization and clustering
 cells <- ScaleData(cells, verbose = FALSE)
@@ -127,7 +127,7 @@ Seurat provides several useful ways of visualizing both cells and features that 
 
 First we look at the top genes associated with the first five principal components
 
-```{r}
+```{r PCAdims}
 print(cells[['pca']], dims=1:5, nfeatures=5)
 ```
 
@@ -136,20 +136,20 @@ print(cells[['pca']], dims=1:5, nfeatures=5)
 
 Seurat uses graph-based clustering to cluster cells with similar properties.  It first constructs a KNN grpah based on the euclidean distance in PCA space, and then it refines the edge weights betweeen any two cells based on the shared overlap in their local neighbourhoods (Jaccard similiarity).
 
-```{r include=FALSE}
+```{r cluster, include=FALSE}
 cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
 cells <- FindClusters(cells, resolution = 0.5)
 ```
 
 
-```{r}
+```{r cellsMeta}
 cells.meta <- tibble(cells@meta.data)
 ```
 
 
 There were `r length(unique(cells.meta$seurat_clusters))`, clusters and each cluster has the following number of cells in each cluster:
 
-```{r}
+```{r clusterCellCounts}
 cells.meta %>% 
   group_by(dataset_name, seurat_clusters) %>% 
   summarise(count = n()) %>% 
@@ -160,7 +160,7 @@ cells.meta %>%
 
 We do a nonlinear PCA (UMAP) to visualise the clusters:
 
-```{r include=FALSE}
+```{r clusterDimPlot, include=FALSE}
 cells <- RunUMAP(cells, reduction = "pca", dims = 1:30)
 p1 <- DimPlot(cells, reduction="umap", label=TRUE, repel=TRUE)
 p2 <- DimPlot(cells, reduction="umap", label=FALSE, group.by="dataset_name")
@@ -173,7 +173,7 @@ p1 + p2
 
 Here I've colored points instead by which dataset the cell comes from:
 
-```{r}
+```{r clusterDimPlot2}
 
 
 DimPlot(cells, reduction="umap", split.by="dataset_name", ncol=5)
@@ -182,7 +182,7 @@ DimPlot(cells, reduction="umap", split.by="dataset_name", ncol=5)
 
 And here I've combined the replicates of the same sample types:
 
-```{r}
+```{r clusterDimPlot3}
 DimPlot(cells, reduction="umap", split.by="dataset_type", ncol=3)
 ```
 
@@ -195,7 +195,7 @@ In other words (the words of [Jared Andrews](https://www.biostars.org/p/409790/)
 
 > find markers differentially expressed in each identity group by comparing it to all of the others - you don't have to manually define anything. Note that markers may bleed over between closely-related groups - they are not forced to be specific to only one group. 
 
-```{r}
+```{r clusterMarkers}
 cell.markers <- FindAllMarkers(cells, only.pos=FALSE, min.pct=0.25, logfc.threshold = 0.25)
 
 
@@ -204,7 +204,7 @@ write.table(cell.markers, file=glue::glue("{save.file}_find-all-markers.tsv"), s
 ```
 
 
-```{r}
+```{r topCellMarkers}
 cell.markers %>%
     group_by(cluster) %>%
     slice_max(n = 5, order_by = avg_log2FC)
@@ -213,7 +213,7 @@ cell.markers %>%
 
 We can also plot a heatmap of the top genes for each cluster
 
-```{r fig.height=15, fig.width=15}
+```{r clusterHeatmap, fig.height=15, fig.width=15}
 top10 <- cell.markers %>% 
   group_by(cluster) %>% 
   top_n(n=10, wt = avg_log2FC)
@@ -229,7 +229,7 @@ We next look at the genes that are [conserved between two groups](https://satija
 
 I do this for each cluster, and compare between the sample types (hepatocytes, low engraftment, high engraftment, vector).  So the genes identified here are conserved in each cluster, irrespective of the source of the cells.
 
-```{r}
+```{r conservedMarkers}
 
 # get number of clusters
 
@@ -270,7 +270,7 @@ for (i in unique(cells.meta$seurat_clusters)) {
 ```
 These are the genes within each cluster that are differentially expressed between the conditions, ranked by minimum p value:
 
-```{r}
+```{r conservedMarkersShow}
 cells.conservedMarkers %>% 
   select(cluster, gene, minimump_p_val, max_pval, low_p_val:high_p_val_adj) %>% 
   arrange(minimump_p_val)
@@ -282,7 +282,7 @@ cells.conservedMarkers %>%
 
 We can also look at the genes of interest with regards to zonation.  These genes are:
 
-```{r fig.height = 15, fig.width=15}
+```{r zonationGenesCombined, fig.height = 15, fig.width=15}
 
 
 genes_of_interest <- function(genes) {
@@ -350,7 +350,7 @@ genes_of_interest(genes)
 ```
 
 
-```{r fig.width=12, fig.height=8}
+```{r zonationGenesSamples, fig.width=12, fig.height=8}
 
 
 for (gene in genes) {
@@ -362,13 +362,13 @@ for (gene in genes) {
 
 ### Genes of interest - proliferation
 
-```{r}
+```{r ProliferationGenesCombined}
 genes <- c("Homo-w-AAV-LGR5", "Homo-w-AAV-AXIN2")
 genes_of_interest(genes)
 
 ```
 
-```{r}
+```{r proliferationGenesIndividual}
 for (gene in genes) {
   gene_of_interest(gene)
 }
@@ -379,14 +379,14 @@ for (gene in genes) {
 
 
 
-```{r}
+```{r transductionGenesCombined}
 genes <- c("Homo-w-AAV-KIAA0319L", "Homo-w-AAV-GPR108")
 genes_of_interest(genes)
 
 ```
 
 
-```{r}
+```{r transductionGenesIndividual}
 for (gene in genes) {
   gene_of_interest(gene)
 }
@@ -396,13 +396,13 @@ for (gene in genes) {
 
 ### Genes of interest - response to AAV
 
-```{r}
+```{r AAVResponseGenesCombined}
 genes <- c("Homo-w-AAV-TP53", "Homo-w-AAV-TP21", "Homo-w-AAV-IFI16", "Homo-w-AAV-TLR2")
 genes_of_interest(genes)
 
 ```
 
-```{r}
+```{r AAVResponseGenesIndividual}
 for (gene in genes) {
   gene_of_interest(gene)
 }
@@ -411,7 +411,7 @@ for (gene in genes) {
 
 ### Genes of interest - AAV expression
 
-```{r}
+```{r AAVExprCombined}
 aav_genes <- rownames(cells)[stringr::str_detect(rownames(cells), "VENUS|CERULEAN")]
 if (length(aav_genes) == 0) {
   print("skipping this analysis because no AAV 'genes' found")
@@ -421,20 +421,20 @@ if (length(aav_genes) == 0) {
 
 ```
 
-```{r}
+```{r AAVExprIndividual}
 for (gene in aav_genes) {
   gene_of_interest(gene)
 }
 
 ```
-```{r}
+```{r AAVExprJoint1}
 FeaturePlot(cells, features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgray', 'red', 'blue'))
 ```
 
 Coexpression of Venus and Cerulean (all cells from all samples):
 
-```{r}
+```{r AAVExprJoint2}
  FeaturePlot(subset(cells, dataset_type== 'LK03C_REDHV' | dataset_type== 'LK03V_REDHC'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, split.by="dataset_type")
@@ -442,7 +442,7 @@ Coexpression of Venus and Cerulean (all cells from all samples):
 
 For only the LK03C_REDHV samples:
 
-```{r fig.width=7, fig.height=3}
+```{r AAVExprJoint_LK03C_REDHV fig.width=7, fig.height=3}
  FeaturePlot(subset(cells, dataset_type== 'LK03C_REDHV'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
@@ -451,7 +451,7 @@ For only the LK03C_REDHV samples:
 
 For only the LK03V_REDHC samples:
 
-```{r  fig.width=7, fig.height=3}
+```{r  AAVExprJoint_LK03V_REDHC, fig.width=7, fig.height=3}
  FeaturePlot(subset(cells, dataset_type== 'LK03V_REDHC'), 
              reduction='umap', features = aav_genes, 
             order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
@@ -461,7 +461,7 @@ For only the LK03V_REDHC samples:
 
 ## Pseudotime
 
-```{r}
+```{r pseudotime}
 library(SeuratWrappers)
 library(monocle3)
 options(stringsAsFactors = FALSE)
