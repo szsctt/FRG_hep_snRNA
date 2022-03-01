@@ -1,6 +1,14 @@
 ---
 title: "Figure 1"
-output: html_notebook
+output:
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
 ---
 
 
@@ -13,6 +21,8 @@ library(patchwork)
 library(cowplot)
 library(ggrepel)
 source("workflow.R")
+
+legend_text_size <- 10
 ```
 
 Reproduce this figure that Marti made with R so that all the plots fit together properly.
@@ -21,12 +31,12 @@ Reproduce this figure that Marti made with R so that all the plots fit together 
 
 ## Panel A - portal triad
 
-```{r portalTriad}
+```{r portalTriad, fig.height=4, fig.width=6}
 a.path <- "../figures/fig1a.png"
 a <- magick::image_read(a.path)
-a <- ggplot() +
-   ggplotify::as.grob(a)
+a<- ggplotify::as.grob(a)
 
+patchwork::wrap_plots(a)
 
 ```
 
@@ -74,7 +84,9 @@ queryplots.aizarani <- purrr::map(names(queries),
                        )
 # https://stackoverflow.com/questions/27130610/legend-on-bottom-two-rows-wrapped-in-ggplot2-in-r
 legend.b <- cowplot::get_legend(refplot + 
-                                theme(legend.position="bottom", legend.box="vertical", legend.title = element_blank(),) + 
+                                theme(legend.position="bottom", 
+                                      legend.box="vertical", text=element_text(size=legend_text_size), 
+                                      legend.title = element_blank()) + 
                                 guides(fill=guide_legend(nrow=5,byrow=TRUE))
                               )
 
@@ -93,12 +105,16 @@ aizarani.plots.selected1 <- plot_grid(refplot + NoLegend() + ggtitle("Aizarani, 
                                       )
 
 legend.b.right <- cowplot::get_legend(refplot + 
-                                theme(legend.position="right", legend.box="vertical", legend.title = element_blank(),) + 
-                                guides(fill=guide_legend(nrow=5,byrow=TRUE))
+                                theme(text=element_text(size=legend_text_size),
+                                  legend.position="right", legend.box="vertical", 
+                                  legend.title = element_blank(),) + 
+                                guides(col=guide_legend(nrow=1,byrow=TRUE))
                               )
 legend.b.bottom <- cowplot::get_legend(refplot + 
-                                theme(legend.position="bottom", legend.box="vertical", legend.title = element_blank(),) + 
-                                guides(fill=guide_legend(nrow=5,byrow=TRUE))
+                                theme(text=element_text(size=legend_text_size),
+                                  legend.position="bottom", legend.box="vertical", 
+                                  legend.title = element_blank(),) + 
+                                guides(col=guide_legend(nrow=3,byrow=TRUE))
                               )
 
 b1 <- refplot + NoLegend() + ggtitle("Aizarani, 2019\nGSE124395\nNormal human liver tissue") + title_theme
@@ -158,7 +174,7 @@ saveRDS(cells, cache_file)
 ```
 
 
-```{r integratedClusters}
+```{r integratedClusters, fig.height=4, fig.width=10}
 DimPlot(cells, split.by = "dataset.type")
 ```
 
@@ -175,7 +191,7 @@ Marti calls these clusters:
 
 Let's label them:
 
-```{r integratedClustersLabelled}
+```{r integratedClustersLabelled, fig.height=5, fig.width=10}
 cells$cell.type <- case_when(
   cells$seurat_clusters == 0 ~ "Mid-zonal hepatocytes 3",
   cells$seurat_clusters == 1 ~ "Portal hepatoctyes 1",  
@@ -209,16 +225,21 @@ c4 <- DimPlot(subset(cells, dataset.name =="high2"), group.by="cell.type") + ggt
 ```
 
 
-```{r integratedClustersLabelledC2}
-legend.c.right <- cowplot::get_legend(c1 + theme(legend.title = element_blank()))
-legend.c.bottom <- cowplot::get_legend(c1 + theme(legend.title = element_blank(), legend.position = "bottom"))
+```{r integratedClustersLabelledC2, fig.height=5, fig.width=10}
+legend.c.right <- cowplot::get_legend(c1 + theme(text = element_text(size=legend_text_size),
+                                                                     legend.title = element_blank()))
+legend.c.bottom <- cowplot::get_legend(c1 + theme(text = element_text(size=legend_text_size),
+                                                                      legend.title = element_blank(), legend.position = "bottom") +
+                                        guides(col=guide_legend(nrow=2,byrow=TRUE))
+                                       )
 
 c <- cowplot::plot_grid(c1 + NoLegend(), c2 + NoLegend(), c3 + NoLegend(), c4 + NoLegend(), legend.c.right, nrow = 1)
 c
 ```
 
 
-```{r integratedClustersLabelledC3}
+
+```{r integratedClustersLabelledC3, fig.height=5, fig.width=10}
 c_patch <- patchwork::wrap_plots(c1, c2 , c3, c4) +  patchwork::plot_layout(guides = "collect", nrow = 1)
 c_patch
 ```
@@ -229,7 +250,7 @@ ab <- cowplot::plot_grid(a, b, nrow=1)
 cowplot::plot_grid(ab, c, ncol=1)
 ```
 
-
+Cowplot doesn't do a very good job - try patchwork
 
 ```{r ABCpatchwork, fig.width = 10, fig.height = 5}
 c1 <- c1 + NoLegend()
@@ -239,15 +260,117 @@ c4 <- c4 + NoLegend()
 
 
 layout <- "
-AAAABBBBCCCC
-DDDDDDDDDDDD
-EEEFFFGGGHHH
-IIIIIIIIIIII
+ABCD
+AEEE
+FGHI
+JJJJ
 "
-patchwork::wrap_plots(b1, b2, b3, legend.b.bottom,
+patchwork::wrap_plots(a, b1, b2, b3, legend.b.bottom,
                       c1 + NoLegend(), c2 + NoLegend(), c3 + NoLegend(), c4 + NoLegend(), legend.c.bottom) + 
-  plot_layout(design = layout)
+  plot_layout(design = layout) &
+  theme(text = element_text(size=8), axis.text = element_text(size=8))
 
 
 ```
+
+```{r fig.width = 8, fig.height=8}
+layout <- "
+ABC
+ABC
+DDD
+"
+b <- patchwork::wrap_plots(b1, b2, b3, legend.b.bottom) + plot_layout(design = layout) 
+
+layout <- "
+AABBCCDD
+AABBCCDD
+#EEEEEEE
+"
+c <- patchwork::wrap_plots(c1, c2, c3, c4, legend.c.bottom) + plot_layout(design = layout) 
+
+layout <- "
+AB
+CC
+"
+
+abc <- patchwork::wrap_plots(a, b, c) + plot_layout(design=layout)
+
+abc
+```
+
+
+Not too bad.  The legend for B is a bit cut off, but maybe we can fix that at the end.  Let's add the rest of the plots.  The rest of the figure gene expression in both pre-engraftment cells and hFRG hepatocytes for the genes:  ASS1, CYP2E1, LGR5, AXIN2, KIAA0319L, GPR108.
+
+
+```{r fig1_final, fig.height = 18, fig.width = 9}
+plot.cells <- subset(cells,  subset = dataset.type %in% c("hep", "high"))
+
+
+plot_feature <- function(feature_name) {
+# get list of plots for this feature
+plots <- FeaturePlot(plot.cells, split.by="dataset.type", features=feature_name, keep.scale="all", order=TRUE)
+
+# add custom titles
+plots[[1]] <- plots[[1]] + ggtitle("Pre-engraftment") 
+plots[[2]] <- plots[[2]] + ggtitle("hFRG hepatocytes") 
+
+plots
+
+# hack to get scale bar
+plots.legend <- cowplot::get_legend(FeaturePlot(plot.cells, features= feature_name) + 
+                                      theme(legend.position = "bottom", legend.text = element_text(size=8)) )
+
+wrap_plots(plots.legend)
+
+layout <- "
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+#B#
+"
+
+return(wrap_plots(plots, plots.legend, design=layout))
+
+}
+
+d <- plot_feature("ASS1")
+e <- plot_feature("CYP2E1")
+f <- plot_feature("LGR5")
+g <- plot_feature("AXIN2")
+h <- plot_feature("KIAA0319L")
+i <- plot_feature("GPR108")
+
+layout <- "
+AA
+AA
+BC
+DE
+FG
+"
+
+patchwork::wrap_plots(abc, d, e, f, g, h, i) + 
+  plot_layout(design=layout) & 
+  theme(text = element_text(size=8), 
+        axis.text = element_text(size=8),
+        legend.text = element_text(size=8)) 
+
+```
+
+
+
+
+
+
+
+
+
+
 
