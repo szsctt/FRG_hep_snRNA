@@ -16,7 +16,6 @@ Error in idx[i, ] <- res[[i]][[1]] :
 ```
 And then R crashes. 
 
-I 
 This seems to depend on the choice of k.filter - some values work for some datasets but not others.
 
 ```{r include=FALSE}
