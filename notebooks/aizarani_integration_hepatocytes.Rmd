@@ -23,6 +23,11 @@ library(patchwork)
 library(cowplot)
 library(ggrepel)
 source("workflow.R")
+
+cache_dir <- "cache"
+dir.create(cache_dir)
+workspace_image <- glue::glue("{cache_dir}/aizarani_integration_hepatocytes.R")
+
 ```
 
 ```{r loadData, include=FALSE}
@@ -731,8 +736,21 @@ To order by psuedotime, we have to pick a principal point - essentially, where p
 #unique(ref.hep.monocle@principal_graph_aux[["UMAP"]])
 
 
-# this is interactive!  won't work for Rmarkdown :(
- ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+
+
+ref.hep.monocle.1.filename <- glue::glue(
+  "{cache_dir}/aizarani_integration_hepatocytes-ref.hep.ref.hep.monocle.1.RDS"
+)
+
+
+if (!file.exists(ref.hep.monocle.1.filename)) {
+  # this is interactive!  won't work for Rmarkdown :(
+  ref.hep.monocle.1 <- order_cells(ref.hep.monocle)
+  saveRDS(ref.hep.monocle.1, ref.hep.monocle.1.filename)
+} else {
+  ref.hep.monocle.1 = readRDS(ref.hep.monocle.1.filename)
+}
+ 
 ```
 
 ```{r}
@@ -814,6 +832,9 @@ reference.hep$monocle3_pseudotime <- monocle3::pseudotime(ref.hep.monocle.1)
 
 
 merged <- import_noMouse_merged()
+
+save.image(file = workspace_image)
+
 mapHepQuery <- function(query_name, k.filter=200) {
     print(glue::glue("working on {query_name}"))
     query <- merged[[query_name]]
@@ -839,14 +860,14 @@ mapHepQuery <- function(query_name, k.filter=200) {
 }
 
 
-queries.hep <- list(
-    "aizarani" = ref.hep.1,
-    "hep.filt.200" = mapHepQuery("hep", k.filter=NA),
-    "low.filt.200" =  mapHepQuery("low", k.filter=NA),
-    "high.filt.NA" = mapHepQuery("high", k.filter=NA),
-    "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA),
-    "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)
-  )
+# queries.hep <- list(
+#     "aizarani" = ref.hep.1,
+#     "hep.filt.200" = mapHepQuery("hep", k.filter=NA),
+#     "low.filt.200" =  mapHepQuery("low", k.filter=NA),
+#     "high.filt.NA" = mapHepQuery("high", k.filter=NA),
+#     "LK03C_REDHV.filt.NA" = mapHepQuery("LK03C_REDHV", k.filter=NA),
+#     "LK03V_REDHC.filt.NA" =  mapHepQuery("LK03V_REDHC", k.filter=NA)
+#   )
 ```
 
 
