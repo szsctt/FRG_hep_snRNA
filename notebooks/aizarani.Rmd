@@ -18,6 +18,9 @@ knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('pdf', 'png'))
 library(Seurat)
 library(tidyverse)
 
+cache_dir <- "cache"
+dir.create(cache_dir)
+
 ```
 
 Load Aizarani data. I'm using their count matrix 'NormalHumanLiverData' from GEO accession GSE124395.
@@ -118,7 +121,16 @@ DimPlot(aizarani, reduction="tsne")
 
 Finding markers for the clusters:
 ```{r include=FALSE}
-aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
+markers.file <- glue::glue("{cache_dir}/aizarani.aizarani.markers.RDS")
+
+if (!file.exists(markers.file)) {
+  aizarani.markers <- FindAllMarkers(aizarani, only.pos=TRUE, min.pct=0.25, logfc.threshold = 0.25)
+  saveRDS(aizarani.markers, markers.file)
+} else {
+  aizarani.markers <- readRDS(markers.file)
+}
+
+
 ```
 
 Top three markers for each cluster:
@@ -205,15 +217,16 @@ paper.cluster.names <- tibble(
 )
 
 paper_clusters_df %>% 
-  count(cluster) %>% 
+  group_by(cluster) %>% 
+  summarise(n = n()) %>% 
   left_join(paper.cluster.names, by="cluster") %>% 
-  rename(n_cells = n)
+  dplyr::rename(n_cells = n)
 
 
 aizarani_cellnames <- aizarani_cellnames %>% 
   left_join(paper.cluster.names, by="cluster")
 
-aizarani[['paper.cluster.names']] <- aizarani_cellnames$name
+aizarani$paper.cluster.names <- aizarani_cellnames$name
 ```
 
 ```{r}
@@ -355,6 +368,7 @@ merged <- list(
 # data.obj.mapped <- purrr::map(merged, ~mapHepQuery(., k.filter=150))
 ```
 
+The other datasets weren't so easy: see notebook aizarani_integration_hepatocyes for integration results.
 
 
 ```{r}
