@@ -23,7 +23,7 @@ source("workflow.R")
 
 cache_dir <- "cache"
 dir.create(cache_dir)
-integrated_file <- glue::glue("{cache}/integrated_pseudotime.cells.RDS")
+integrated_file <- glue::glue("{cache_dir}/integrated_pseudotime.cells.RDS")
 
 
 if (!file.exists(integrated_file)) {
