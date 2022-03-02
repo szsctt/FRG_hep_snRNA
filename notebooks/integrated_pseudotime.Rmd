@@ -21,11 +21,14 @@ library(dplyr)
 library(patchwork)
 source("workflow.R")
 
+cache_dir <- "cache"
+dir.create(cache_dir)
+integrated_file <- glue::glue("{cache}/integrated_pseudotime.cells.RDS")
+
+
+if (!file.exists(integrated_file)) {
 
 data.obj <- import_without_mouse()
-save.file <- glue::glue("../out/Seurat/integrated/mouse-{params$include_mouse}")
-dir.create(dirname(save.file), recursive=TRUE)
-
 
 ## add column names for later
 for (i in seq_along(names(data.obj))) {
@@ -35,10 +38,10 @@ for (i in seq_along(names(data.obj))) {
   data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
   data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
   
+  # normalize and find variable features for each dataset
   data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
   data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
 }
-
 
 
 # standard workflow
@@ -55,6 +58,13 @@ cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
 
 cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
 cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cells, integrated_file)
+
+} else {
+  cells <- readRDS(integrated_file)
+}
+
 ```
 
 
