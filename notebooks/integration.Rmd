@@ -462,17 +462,17 @@ For only the LK03V_REDHC samples:
 ## Pseudotime
 
 ```{r pseudotime}
-library(SeuratWrappers)
-library(monocle3)
-options(stringsAsFactors = FALSE)
-
-cells.monocle <- as.cell_data_set(cells)
-cells.monocle <- cluster_cells(cells.monocle)
-
-p1 <- plot_cells(cells.monocle, show_trajectory_graph = FALSE)
-p2 <- plot_cells(cells.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
-
-cowplot::plot_grid(p1, p2)
+# library(SeuratWrappers)
+# library(monocle3)
+# options(stringsAsFactors = FALSE)
+# 
+# cells.monocle <- as.cell_data_set(cells)
+# cells.monocle <- cluster_cells(cells.monocle)
+# 
+# p1 <- plot_cells(cells.monocle, show_trajectory_graph = FALSE)
+# p2 <- plot_cells(cells.monocle, color_cells_by = "partition", show_trajectory_graph = FALSE)
+# 
+# cowplot::plot_grid(p1, p2)
 
 ```
 
