@@ -1,5 +1,5 @@
 ---
-title: "Figure 1"
+title: "Comparing pre and post engraftment"
 output:
   html_document:
     keep_md: true
@@ -10,7 +10,6 @@ output:
       smooth_scroll: false
     code_folding: hide
 ---
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(fig.width = 7, fig.height=20, dev = c('pdf', 'png'))
@@ -24,26 +23,6 @@ source("workflow.R")
 
 legend_text_size <- 10
 ```
-
-Reproduce this figure that Marti made with R so that all the plots fit together properly.
-
-![Marti's figure 1](../figures/fig1_marti.png)
-
-## Panel A - portal triad
-
-```{r portalTriad, fig.height=4, fig.width=6}
-a.path <- "../figures/fig1a.png"
-a <- magick::image_read(a.path)
-a<- ggplotify::as.grob(a)
-
-patchwork::wrap_plots(a)
-
-```
-
-
-
-## Panel B - integration with Aizarani data
-
 
 ```{r loadIntegratedWithAizarani, include=FALSE}
 
@@ -63,6 +42,393 @@ if (!file.exists(cache_file)) {
 reference <- data[['aizarani']]
 queries <- data[names(data) != 'aizarani']
 ```
+
+```{r loadIntegrated, include=FALSE}
+
+cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
+data.obj <- import_without_mouse()
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+# do integration
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering in the integrated data
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+```
+
+## Human hepatocytes analysed with single-cell RNA sequencing prior and post-engraftment in the hFRG model differ in zonal proportions but maintain zonation markers 
+
+
+### Nuclei counts
+
+How many nuclei in each sample?
+
+
+```{r}
+tibble(
+  name = as.character(cells$dataset.name),
+) %>% 
+  dplyr::count(name)
+
+```
+
+### Marker genes
+
+Are there periportal or central marker genes that have significantly higher expression in the original hepatocytes?
+
+```{r}
+cells.section1 <- subset(cells, dataset.type %in% c("hep", 'high'))
+
+# re-name 'hep' to 'pre' and 'high' to 'host'
+cells.section1$dataset.type <- ifelse(cells.section1$dataset.type == "hep", "pre", "post")
+
+cells.section1$cell.type <- case_when(
+  cells.section1$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
+  cells.section1$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+  cells.section1$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+  cells.section1$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+  cells.section1$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+  cells.section1$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+  cells.section1$seurat_clusters == 6 ~ "Endothelial cells (6)"
+)
+
+cells.section1$cell.type.shorter <- case_when(
+  cells.section1$seurat_clusters == 0 ~ "Portal 0",
+  cells.section1$seurat_clusters == 1 ~ "Mid-zonal 1",  
+  cells.section1$seurat_clusters == 2 ~ "Mid-zonal 2",
+  cells.section1$seurat_clusters == 3 ~ "Central 3",
+  cells.section1$seurat_clusters == 4 ~ "Portal 4",
+  cells.section1$seurat_clusters == 5 ~ "Mid-zonal 5",
+  cells.section1$seurat_clusters == 6 ~ "Endothelial"
+)
+
+cells.section1$cell.type.shortest <- case_when(
+  cells.section1$seurat_clusters == 0 ~ "Portal",
+  cells.section1$seurat_clusters == 1 ~ "Mid-zonal",  
+  cells.section1$seurat_clusters == 2 ~ "Mid-zonal",
+  cells.section1$seurat_clusters == 3 ~ "Central",
+  cells.section1$seurat_clusters == 4 ~ "Portal",
+  cells.section1$seurat_clusters == 5 ~ "Mid-zonal",
+  cells.section1$seurat_clusters == 6 ~ "Endothelial"
+)
+
+```
+
+To answer this question, we first have to decide which cells are periportal.  
+
+
+Marti labelled the clusters:
+
+```{r fig.height=10, fig.width=10}
+Idents(cells.section1) <- cells.section1$seurat_clusters
+p1 <- DimPlot(cells.section1) + ggtitle("Seurat Clusters")
+Idents(cells.section1) <- cells.section1$cell.type.shorter
+p2 <- DimPlot(cells.section1) + ggtitle("Named clusters")
+Idents(cells.section1) <- cells.section1$cell.type.shortest
+p3 <- DimPlot(cells.section1) + ggtitle("Combined clusters")
+cowplot::plot_grid(p1, p2, p3)
+```
+
+
+
+
+The nubmer of cells of each type in each condition:
+
+```{r}
+tibble(
+  name = as.character(cells$dataset.name),
+  cluster = as.character(cells$cell.type)
+) %>% 
+  dplyr::count(name, cluster) %>% 
+  pivot_wider(names_from=name, values_from = n)
+
+```
+I will exclude the endothelial cells to only focus on hepatocytes.
+
+```{r}
+cells.section1 <- subset(cells.section1, cell.type.shortest != "Endothelial")
+```
+
+To confirm the cluster annotation, using the `FindConservedMarkers` function, the markers for each Seurat cluster are:
+
+```{r include=FALSE}
+DefaultAssay(cells.section1) <- "RNA"
+Idents(cells.section1) <- cells.section1$seurat_clusters
+clusterMarkers <- tibble(
+  cluster = unique(cells.section1$seurat_clusters)
+) %>% 
+  rowwise() %>% 
+  mutate(markers = list(
+    FindConservedMarkers(cells.section1, ident.1=cluster, grouping.var="dataset.type") %>% 
+      rownames_to_column()
+    )
+    ) 
+
+clusterMarkers <- clusterMarkers %>% 
+  unnest(markers) %>% 
+  rename(gene=rowname)
+```
+
+```{r}
+clusterMarkers %>% 
+  arrange(cluster, desc(pre_avg_log2FC))
+```
+
+The top 10 from each cluster:
+```{r}
+
+clusterMarkers %>% 
+  group_by(cluster) %>% 
+  slice_max(n=10, order_by=pre_avg_log2FC) %>% 
+  arrange(cluster, desc(pre_avg_log2FC))
+```
+
+#### Portal marker genes
+
+I identified marker genes for the portal clusters using the `FindConservedMarkers` function.  This identifies genes that are differentially expressed between the portal cluster and the other hepatocytes (excluding the endothelial cells).
+
+
+```{r include=FALSE}
+Idents(cells.section1) <- cells.section1$cell.type.shortest
+portalMarkers <- FindConservedMarkers(cells.section1, grouping.var="dataset.type", ident.1 = "Portal")
+```
+
+
+```{r}
+portalMarkers %>% 
+  arrange(desc(pre_avg_log2FC))
+```
+
+Notice that this table contains separate analyses (columns) for pre- and post-engraftment.
+
+Periportal marker genes include lipid and cholesterol synthesis genes (SCD, HMGCS1, ACSS2), Urea cycle genes (ASS1, ARG1, ASL).
+
+Where are these genes in this list?
+
+
+```{r}
+lipid.periportal.genes <- c("SCD", "HMGCS1", "ACSS2")
+urea.cycle.genes <- c("ASS1", "ARG1", "ASL")
+portal.genes <- c(lipid.periportal.genes, urea.cycle.genes)
+portalMarkers %>% 
+  filter(row.names(portalMarkers) %in% portal.genes)
+```
+
+Most of these markers seem to be slightly upregulated in the portal cluster (log2FC > 0), although SCD and ASL don't appear in our list (so aren't differentially expressed).
+
+
+Here I'm comparing the highly engrafted samples ('high1', 'high2') with the pre-engraftment samples ('pre1', 'pre2').
+
+```{r fig.width=15, fig.height=6}
+Idents(cells.section1) <- cells.section1$cell.type.shortest
+plots <- purrr::map(portal.genes, 
+                    ~VlnPlot(cells.section1, 
+                             ., 
+                             split.by="dataset.type",
+                             idents = c("Mid-zonal", "Portal", "Central")))
+legend <- cowplot::get_legend(plots[[1]])
+plots <- purrr::map(plots, ~.+NoLegend())
+
+p1 <- cowplot::plot_grid(plotlist=plots, nrow=3)
+p1 <- cowplot::plot_grid(p1, legend, nrow=1, rel_widths = c(1, 0.1))
+p1
+```
+
+We'd like to know if the expression of these genes in the portal cluster is different between pre- and post-engraftment.  The below shows the average expression of genes in portal hepatocytes before and after engraftment, with the portal genes indicated in red.
+
+```{r fig.height=4, fig.width=4}
+
+theme_set(cowplot::theme_cowplot())
+
+cells.portal <- subset(cells.section1, idents="Portal")
+
+
+# get average expression of each genes amongst portal cells
+avg.cells.portal <- as.data.frame(log1p(AverageExpression(cells.portal, verbose=FALSE, group.by="dataset.type")$RNA))
+avg.cells.portal$gene <- rownames(avg.cells.portal)
+
+# get average expression of genes of interest
+portal.avg.cells.portal <- avg.cells.portal %>% 
+  filter(gene %in% portal.genes)
+
+p2 <- ggplot(avg.cells.portal, aes(x=pre, y=post, label=gene) ) +
+  geom_point(alpha=0.5, color="ivory4") +
+  geom_abline() +
+  ggtitle("Portal hepatocytes") +
+  geom_point(data=portal.avg.cells.portal, color="dodgerblue3") +
+  ggrepel::geom_text_repel(data=portal.avg.cells.portal, color="dodgerblue3") +
+  labs(x="Pre-engraftment expression",
+       y="Post-engraftment expression") 
+
+p2
+```
+
+We can see that some of the genes are more highly expressed in the pre-engraftment condition.
+
+Putting the violins together with this plot might make a good supplementary figure:
+
+
+I use `FindMarkers` on the portal cells to test for differential expression, comparing the pre-engraftment portal cells (group 1) vs the post-engftment portal cells (group 2).
+
+```{r include=FALSE}
+Idents(cells.portal) <- cells.portal$dataset.type
+portal.prepost.markers <- FindMarkers(cells.portal, ident.1="pre", ident2="post", logfc.threshold = 0.05)
+```
+
+```{r}
+portal.prepost.markers %>% 
+  arrange(avg_log2FC)
+```
+```{r}
+portal.prepost.markers %>% 
+  filter(rownames(portal.prepost.markers) %in% portal.genes) 
+
+```
+
+#### Central marker genes
+
+I identified marker genes for the central cluster using the `FindConservedMarkers` function.  This identifies genes that are differentially expressed between the central cluster and the other hepatocytes (excluding the endothelial cells).
+
+
+```{r include=FALSE}
+centralMarkers <- FindConservedMarkers(cells.section1, grouping.var="dataset.type", ident.1 = "Central")
+```
+
+
+```{r}
+centralMarkers %>% 
+  arrange(desc(pre_avg_log2FC))
+```
+
+
+Central marker genes include GLUL and CPY2E1.
+
+Where are these genes in this list?
+
+```{r}
+central.genes <- c("GLUL", "CYP2E1", "AXIN2", "LGR5")
+centralMarkers %>% 
+  filter(rownames(centralMarkers) %in% central.genes)
+```
+
+```{r fig.width=15, fig.height=6}
+Idents(cells.section1) <- cells.section1$cell.type.shortest
+plots <- purrr::map(central.genes, 
+                    ~VlnPlot(cells.section1, 
+                             ., 
+                             split.by="dataset.type",
+                             idents = c("Mid-zonal", "Portal", "Central")))
+legend <- cowplot::get_legend(plots[[1]])
+plots <- purrr::map(plots, ~.+NoLegend())
+
+p3 <- cowplot::plot_grid(plotlist=plots)
+p3 <- cowplot::plot_grid(p3, legend, nrow=1, rel_widths = c(1, 0.1))
+p3
+```
+
+Let's look for differentially expressed genes in the central hepatocytes, and mid-zonal hepatocytes: 
+
+
+```{r fig.height=4, fig.width=12}
+
+cells.central <- subset(cells.section1, idents="Central")
+
+
+# get average expression of each genes amongst central cells
+avg.cells.central <- as.data.frame(log1p(AverageExpression(cells.central, verbose=FALSE, group.by="dataset.type")$RNA))
+avg.cells.central$gene <- rownames(avg.cells.central)
+
+# get average expression of genes of interest
+central.avg.cells.central <- avg.cells.central %>% 
+  filter(gene %in% central.genes)
+
+p4 <- ggplot(avg.cells.central, aes(x=pre, y=post, label=gene) ) +
+  geom_point(alpha=0.5, color="ivory4") +
+  geom_abline() +
+  ggtitle("Central hepatocytes") +
+  geom_point(data=central.avg.cells.central, color="dodgerblue3") +
+  ggrepel::geom_text_repel(data=central.avg.cells.central, color="dodgerblue3") +
+  labs(x="Pre-engraftment expression",
+       y="Post-engraftment expression") 
+
+cells.midzonal <- subset(cells.section1, idents="Mid-zonal")
+
+
+p4
+```
+
+Let's do the same comparison in the central cells as we did for the central cells - here are the genes that are differentially expressed between the 'pre' and 'post' conditions in the central hepatocytes:
+
+```{r include=FALSE}
+Idents(cells.central) <- cells.central$dataset.type
+central.prepost.markers <- FindMarkers(cells.central, ident.1="pre", ident2="post", logfc.threshold = 0.05)
+```
+
+```{r}
+central.prepost.markers %>% 
+  arrange(avg_log2FC)
+```
+
+And here are the central marker genes in these results:
+```{r}
+central.prepost.markers %>% 
+  filter(rownames(central.prepost.markers) %in% central.genes) 
+
+```
+Both are expressed more highly in the pre-engraftment central hepatocytes compared to the post-engraftment central hepatocytes.
+
+
+## Figure 1
+
+
+Reproduce this figure that Marti made with R so that all the plots fit together properly.
+
+![Marti's figure 1](../figures/fig1_marti.png)
+
+### Panel A - portal triad
+
+```{r portalTriad, fig.height=4, fig.width=6}
+a.path <- "../figures/fig1a.png"
+a <- magick::image_read(a.path)
+a<- ggplotify::as.grob(a)
+
+patchwork::wrap_plots(a)
+
+```
+
+
+
+### Panel B - integration with Aizarani data
+
+
+
 
 These are all the datasets:
 
@@ -128,50 +494,12 @@ b
 The legend is a bit cut off but we can fix that later.
 
 
-## Panel C
+### Panel C
 
 The rest of the figure uses Marti's datasets, integrated against each other.
 
 
-```{r loadIntegrated, include=FALSE}
 
-cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
-
-if (!file.exists(cache_file)) {
-
-data.obj <- import_without_mouse()
-
-## add column names for later
-for (i in seq_along(names(data.obj))) {
-  name <- names(data.obj)[i]
-  type <- stringr::str_replace(name, "\\d+$", "")
-  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
-  
-  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
-  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
-}
-
-# do integration
-features <- SelectIntegrationFeatures(object.list = data.obj)
-anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
-cells <- IntegrateData(anchorset = anchors, dims=1:30)
-DefaultAssay(cells) <- "integrated"
-
-# Run the standard workflow for visualization and clustering in the integrated data
-cells <- ScaleData(cells, verbose = FALSE)
-cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
-cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
-cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
-cells <- FindClusters(cells, resolution = 0.5)
-
-saveRDS(cells, cache_file)
-} else {
-  cells <- readRDS(cache_file)
-}
-
-```
 
 
 ```{r integratedClusters, fig.height=4, fig.width=10}
@@ -181,31 +509,46 @@ DimPlot(cells, split.by = "dataset.type")
 
 Marti calls these clusters:
 
-- 0: Mid-zonal hepatocytes 3
-- 1: Portal hepatoctyes 1
-- 2: Mid-zonal hepatocytes 4
-- 3: Central hepatocytes 6
-- 4: Portal hepatocytes 2
-- 5: Mid-zonal hepatocytes 5
+- 0: Portal hepatoctyes
+- 1: Mid-zonal hepatocytes 
+- 2: Mid-zonal hepatocytes 
+- 3: Central hepatocytes 
+- 4: Portal hepatocytes
+- 5: Mid-zonal hepatocytes
 - 6: Endothelial cells
+
+
+*NOTE: Seurat sometimes changes the cluster labels!  The labels used in the paper are different to the above!!*
 
 Let's label them:
 
 ```{r integratedClustersLabelled, fig.height=5, fig.width=10}
 cells$cell.type <- case_when(
-  cells$seurat_clusters == 0 ~ "Mid-zonal hepatocytes 3",
-  cells$seurat_clusters == 1 ~ "Portal hepatoctyes 1",  
-  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes 4",
-  cells$seurat_clusters == 3 ~ "Central hepatocytes 6",
-  cells$seurat_clusters == 4 ~ "Portal hepatocytes 2",
-  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes 5",
+  cells$seurat_clusters == 0 ~ "Portal hepatocytes (0)",
+  cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+  cells$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+  cells$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+  cells$seurat_clusters == 6 ~ "Endothelial cells (6)"
+)
+
+cells$cell.type.shorter <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal hepatocytes",
+  cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes",
+  cells$seurat_clusters == 3 ~ "Central hepatocytes",
+  cells$seurat_clusters == 4 ~ "Portal hepatocytes",
+  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes",
   cells$seurat_clusters == 6 ~ "Endothelial cells"
 )
+
+
 
 DimPlot(cells, group.by="cell.type", split.by = "dataset.type")
 ```
 
-Marti plotted the two replicates for pre-engraftment and the two high samples after engraftment.  **Question: why plot the replicates separately?**
+Marti plotted the two replicates for pre-engraftment and the two high samples after engraftment.
 
 ```{r integratedClustersLabelledC1, include=FALSE}
 
@@ -238,42 +581,84 @@ c
 ```
 
 
+Perhaps, to avoid redundancy, it might be better to show the Seurat clusters and the assigned labels?
 
-```{r integratedClustersLabelledC3, fig.height=5, fig.width=10}
-c_patch <- patchwork::wrap_plots(c1, c2 , c3, c4) +  patchwork::plot_layout(guides = "collect", nrow = 1)
-c_patch
+```{r integratedClustersLabelledCAlt, fig.height=5, fig.width=10}
+
+cellTypes <- unique(cells$seurat_clusters)
+myColors <- brewer.pal(length(cellTypes),"Set1")
+names(myColors) <- cellTypes
+colScale2 <- scale_colour_manual(name = "grp",values = myColors)
+
+c1alt <- DimPlot(subset(cells, dataset.type =="hep"), group.by="seurat_clusters") +
+  ggtitle("Human hepatocytes\nPre-engraftment") + 
+  title_theme + 
+    colScale2
+c2alt <- DimPlot(subset(cells, dataset.type =="high"), group.by="seurat_clusters") + 
+ ggtitle("Human hepatocytes FRG\n5 months") + 
+  title_theme + 
+  colScale2
+
+
+
+c3alt <- DimPlot(subset(cells, dataset.type =="hep"), group.by="cell.type.shorter") +
+   ggtitle("Human hepatocytes\nPre-engraftment")  +
+  title_theme
+c4alt <- DimPlot(subset(cells, dataset.type =="high"), group.by="cell.type.shorter") + 
+  ggtitle("Human hepatocytes FRG\n5 months") +
+  title_theme
+
+legend.c1alt.right <- 
+  cowplot::get_legend(c1alt + theme(text = element_text(size=legend_text_size),
+                                 legend.title = element_blank()))
+legend.c1alt.bottom <- 
+  cowplot::get_legend(c1alt +
+                        theme(text = element_text(size=legend_text_size),
+                              legend.title = element_blank(),
+                              legend.position = "bottom") +
+                        guides(col=guide_legend(nrow=1,byrow=TRUE))
+                                       )
+legend.c3alt.right <- 
+  cowplot::get_legend(c3alt + 
+                        theme(text = element_text(size=legend_text_size),
+                              legend.title = element_blank()))
+
+legend.c3alt.bottom <- 
+  cowplot::get_legend(c3alt + 
+                        theme(text = element_text(size=legend_text_size),
+                              legend.title = element_blank(), 
+                              legend.position = "bottom") +
+                        guides(col=guide_legend(nrow=2,byrow=TRUE))
+                                       )
+
+
+c1alt <- c1alt + NoLegend()
+c2alt <- c2alt + NoLegend()
+c3alt <- c3alt + NoLegend()
+c4alt <- c4alt + NoLegend()
+
+layout <- '
+AABBCCDD
+AABBCCDD
+#EEE#FFF
+'
+calt <- patchwork::wrap_plots(c1alt, c2alt, c3alt, c4alt, legend.c1alt.bottom, legend.c3alt.bottom) + 
+  plot_layout(design = layout) 
+calt
 ```
 
+Our two options are then:
 
-```{r ABCcowplot, fig.width = 10, fig.height = 5}
-ab <- cowplot::plot_grid(a, b, nrow=1)
-cowplot::plot_grid(ab, c, ncol=1)
-```
 
-Cowplot doesn't do a very good job - try patchwork
 
-```{r ABCpatchwork, fig.width = 10, fig.height = 5}
+```{r abc fig.width = 8, fig.height=8}
 c1 <- c1 + NoLegend()
 c2 <- c2 + NoLegend()
 c3 <- c3 + NoLegend()
 c4 <- c4 + NoLegend()
 
 
-layout <- "
-ABCD
-AEEE
-FGHI
-JJJJ
-"
-patchwork::wrap_plots(a, b1, b2, b3, legend.b.bottom,
-                      c1 + NoLegend(), c2 + NoLegend(), c3 + NoLegend(), c4 + NoLegend(), legend.c.bottom) + 
-  plot_layout(design = layout) &
-  theme(text = element_text(size=8), axis.text = element_text(size=8))
 
-
-```
-
-```{r fig.width = 8, fig.height=8}
 layout <- "
 ABC
 ABC
@@ -298,6 +683,11 @@ abc <- patchwork::wrap_plots(a, b, c) + plot_layout(design=layout)
 abc
 ```
 
+```{r abc_alt fig.width = 8, fig.height=8}
+abcalt <- patchwork::wrap_plots(a, b, calt) + plot_layout(design=layout)
+
+abcalt
+```
 
 Not too bad.  The legend for B is a bit cut off, but maybe we can fix that at the end.  Let's add the rest of the plots.  The rest of the figure gene expression in both pre-engraftment cells and hFRG hepatocytes for the genes:  ASS1, CYP2E1, LGR5, AXIN2, KIAA0319L, GPR108.
 
@@ -366,6 +756,14 @@ patchwork::wrap_plots(abc, d, e, f, g, h, i) +
 
 
 
+```{r fig1_final_alt , fig.height = 18, fig.width = 9}
+patchwork::wrap_plots(abcalt, d, e, f, g, h, i) + 
+  plot_layout(design=layout) & 
+  theme(text = element_text(size=8), 
+        axis.text = element_text(size=8),
+        legend.text = element_text(size=8)) 
+
+```
 
 
 
