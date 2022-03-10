@@ -1,0 +1,635 @@
+---
+title: "Effects of vector administration"
+output:
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+
+
+## Overview
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height=7, dev = c('pdf', 'png'))
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+library(patchwork)
+library(cowplot)
+library(ggrepel)
+source("workflow.R")
+
+cache_path <- "cache"
+dir.create(cache_path)
+```
+
+```{r loadIntegrated, include=FALSE}
+
+cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
+data.obj <- import_without_mouse()
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+# do integration
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering in the integrated data
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+
+cells$cell.type <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
+  cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+  cells$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+  cells$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+  cells$seurat_clusters == 6 ~ "Endothelial cells (6)"
+)
+
+cells$cell.type.shorter <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal 0",
+  cells$seurat_clusters == 1 ~ "Mid-zonal 1",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal 2",
+  cells$seurat_clusters == 3 ~ "Central 3",
+  cells$seurat_clusters == 4 ~ "Portal 4",
+  cells$seurat_clusters == 5 ~ "Mid-zonal 5",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+cells$cell.type.shortest <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal",
+  cells$seurat_clusters == 1 ~ "Mid-zonal",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal",
+  cells$seurat_clusters == 3 ~ "Central",
+  cells$seurat_clusters == 4 ~ "Portal",
+  cells$seurat_clusters == 5 ~ "Mid-zonal",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+```
+
+
+Here I use the integrated data (all datasets have been integrated with each other).  The cells look like this:
+
+```{r fig.height=4, fig.width=7}
+p1 <- DimPlot(cells, group.by="seurat_clusters")
+p2 <- DimPlot(cells, group.by="cell.type.shortest")
+p1 + p2
+```
+
+```{r}
+p1 <- DimPlot(cells, split.by="dataset.type", group.by="seurat_clusters")
+p2 <- DimPlot(cells, split.by="dataset.type", group.by="cell.type.shortest")
+p1 + p2
+```
+
+### Numbers of nuclei
+
+For this analysis, I focus on the 'high', 'LK03V_REDHC' and 'LK03C_REDHV' samples.
+
+The number of nuclei in each sample:
+
+```{r}
+tibble(
+  name = as.character(cells$dataset.name),
+) %>% 
+  dplyr::count(name)
+
+```
+
+And in each cluster/cell type:
+
+```{r}
+counts <- tibble(
+  name = as.character(cells$dataset.name),
+  cluster = as.character(cells$cell.type)
+) %>% 
+  dplyr::count(name, cluster) %>% 
+  mutate(subset = "hepatocytes")
+
+counts %>% 
+  pivot_wider(names_from=name, values_from = n)
+
+```
+
+### Comparing Cerulean and Venus expression
+
+To compare the expression of Cerulean and Venus, I focus on the transduced samples ('LK03V_REDHC' and 'LK03C_REDHV').  The main question here: is the expression of Cerulean and Venus different between these two samples?
+
+```{r}
+# "AAV-CERULEAN-BC-3", "AAV-VENUS-BC-1" 
+cells.sel <- subset(cells, dataset.type %in% c("high", "LK03C_REDHV", "LK03V_REDHC"))
+DefaultAssay(cells.sel) <- "RNA"
+mark <- c("AAV-CERULEAN-BC-3",  "AAV-VENUS-BC-1" )
+```
+
+
+Visualizing the expression of Cerulean and Venus in these cells (and the 'highly engrafted' sample, for comparison):
+
+```{r fig.width=8, fig.height=8}
+clust <- purrr::map(unique(cells.sel$dataset.type), ~ DimPlot(subset(cells.sel, dataset.type==.), group.by="cell.type.shortest"))
+cerulean <- FeaturePlot(cells.sel, "AAV-CERULEAN-BC-3", split.by="dataset.type", order=TRUE, keep.scale="all", combine=FALSE)
+venus <- FeaturePlot(cells.sel, "AAV-VENUS-BC-1", split.by="dataset.type", order=TRUE, keep.scale="all", combine=FALSE)
+cerulean_venus <- FeaturePlot(subset(cells.sel, dataset.type %in% c("LK03C_REDHV", "LK03V_REDHC")), mark, split.by="dataset.type", order=TRUE, keep.scale="all", combine=FALSE, blend=TRUE)
+
+clust.legend <- get_legend(clust[[1]])
+cerulean.legend <- get_legend(cerulean[[2]])
+venus.legend <- get_legend(venus[[2]])
+
+clust <- purrr::map(clust, ~.+NoLegend())
+cerulean <- purrr::map(cerulean, ~.+NoLegend())
+venus <- purrr::map(venus, ~.+NoLegend())
+
+patchwork::wrap_plots(clust[[1]], clust[[2]], clust[[3]], clust.legend,
+                      cerulean[[1]], cerulean[[2]], cerulean[[3]], cerulean.legend,
+                      venus[[1]], venus[[2]], venus[[3]], venus.legend)
+
+
+```
+
+Seurat kind of butchers all of the axes labels, but you get the idea.
+
+And the co-expression of Cerulean and Venus (top is for LK03C_REDHV, bottom is for LK03V_REDHC) - but this has a huge potential to be misleading, since in scRNA-seq most transcripts are lost!
+
+```{r, fig.width=12, fig.height=6}
+p1 <-  FeaturePlot(subset(cells.sel, dataset.type== 'LK03C_REDHV'), 
+             features = mark, 
+            order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
+p2 <-  FeaturePlot(subset(cells.sel, dataset.type== 'LK03V_REDHC'), 
+             features = mark, 
+            order=TRUE, blend=TRUE, cols=c('lightgrey','red', 'blue'))
+
+cowplot::plot_grid(p1, p2, nrow=2)
+```
+
+
+## Stronger transduction of human cells with REDH?
+
+> Is there higher transduction of human cells with REDH? Percentage of scRNA+ nuclei. 
+
+To answer this question, I look at all the hepatocytes (I removed any cells in the 'Endothelial' cluster) in the LK03C_REDHV and LK03V_REDHC samples.  I computed the average expression of each genes using the `AverageExpression` function from Seurat. Here I plot the average expression of each gene in these two samples:
+
+
+```{r fig.height=4, fig.width=4}
+
+theme_set(cowplot::theme_cowplot())
+
+cells.hep <- subset(cells.sel, cell.type.shortest != "Endothelial")
+cells.hep <- subset(cells.hep, dataset.type %in% c("LK03C_REDHV", "LK03V_REDHC"))
+
+# get average expression of each genes amongst hepatocytes
+avg.cells.hep <- as.data.frame(log1p(AverageExpression(cells.hep, verbose=FALSE, group.by="dataset.type")$RNA))
+avg.cells.hep$gene <- rownames(avg.cells.hep)
+
+# get average expression of genes of interest
+hep.avg.cells.hep <- avg.cells.hep %>% 
+  filter(gene %in% mark)
+
+p2 <- ggplot(avg.cells.hep, aes(x=LK03C_REDHV, y=LK03V_REDHC, label=gene) ) +
+  geom_point(alpha=0.5, color="ivory4") +
+  geom_abline() +
+  ggtitle("Hepatocytes") +
+  geom_point(data=hep.avg.cells.hep, color="dodgerblue3") +
+  ggrepel::geom_text_repel(data=hep.avg.cells.hep, color="dodgerblue3") +
+  labs(x="LK03C_REDHV expression",
+       y="LK03V_REDHC expression") 
+
+
+p2
+```
+
+The expression is more different for genes that diverge more from the diagnonal.  The expression of these two genes seems to be a bit different between the two conditions, but not by much.
+
+
+### Differential expression of Cerulean and Venus - all hepatocytes
+
+Let's check for differential expression of Cerulean and Venus with [`FindMarkers`](https://satijalab.org/seurat/articles/de_vignette.html).  This function performs differential expression testing using the non-parametric Wilcoxon rank-sum test.  It's unclear from the documentation if this test identifies if there are *more* cells expressing a particular gene compared to another between two clusters, or if it only considers cells expressing the gene, and looks for *higher* levels of expression in those cells (or some combination of the two).
+
+```{r include=FALSE}
+Idents(cells.hep) <- cells.hep$dataset.type
+
+cer_venus.markers <- FindMarkers(cells.hep, ident.1="LK03C_REDHV", ident2="LK03V_REDHC", logfc.threshold = 0.05, features=mark)
+```
+```{r}
+cer_venus.markers %>% 
+  filter(str_detect(rownames(cer_venus.markers), "CERULEAN|VENUS"))
+```
+
+The columns in this table are the following:
+
+    -`avg_logFC`: log fold-chage of the average expression between the two groups. Positive values indicate that the gene is more highly expressed in the first group
+    -`pct.1`: The percentage of cells where the gene is detected in the first group
+    -`pct.2`: The percentage of cells where the gene is detected in the second group
+    -`p_val_adj`: Adjusted p-value, based on bonferroni correction using all genes in the dataset
+
+
+The statistical test applied here is the Wilcoxon Rank Sum test (which is the default in Seurat).
+
+There's not really much of a difference between the two groups (the logFC values are close to 0), but perhaps this is because there are so few transduced cells?  
+
+### Numbers of transduced cells
+
+I will also try filtering the data to only include cells transduced with either Cerulean or Venus, and repeat the analysis.
+
+```{r}
+cells.hep[['percent.AAV']] <- PercentageFeatureSet(cells.hep, pattern="^AAV-")
+cells.hep.AAV <- subset(cells.hep, percent.AAV > 0)
+
+# function to count cells in each sample for a subset of cells
+count_sample <- function(cells.subset, feature_name) {
+  
+  counts <- tibble(
+  name = as.character(cells.subset$dataset.name),
+  cluster = as.character(cells.subset$cell.type)
+) %>% 
+  dplyr::count(name)  %>% 
+  mutate(subset = feature_name)
+  
+}
+
+transduced <- count_sample(cells.hep.AAV, "transduced")
+
+```
+
+I count the number of transduced cells, but would advise not interpreting these results too much (for reasons outlined below the table).  
+
+
+```{r}
+# count cells expressing cerulean
+cells.hep.AAV[['percent.cerulean']] <- PercentageFeatureSet(cells.hep, pattern="^AAV-CERULEAN-BC-3")
+cells.hep.cerulean <- subset(cells.hep.AAV, percent.cerulean > 0)
+
+transduced_cerulean <- count_sample(cells.hep.cerulean, "cerulean")
+
+# count cells expressing venus
+cells.hep.AAV[['percent.venus']] <- PercentageFeatureSet(cells.hep, pattern="^AAV-VENUS-BC-1")
+cells.hep.venus <- subset(cells.hep.AAV, percent.venus > 0)
+
+transduced_venus <- count_sample(cells.hep.venus, "venus")
+
+# count cells expressing both cerulean and venus
+cells.hep.venusAndCerulean <- subset(cells.hep.AAV, percent.venus > 0 & percent.cerulean > 0)
+
+transduced_venusAndCerulean <- count_sample(cells.hep.venusAndCerulean, "venus and cerulean")
+
+
+# comine counts into one table
+bind_rows(counts, transduced, transduced_cerulean, transduced_venus, transduced_venusAndCerulean) %>% 
+  filter(str_detect(name, "LK")) %>% 
+  group_by(name, subset) %>% 
+  summarise(count = sum(n)) %>% 
+  pivot_wider(names_from = subset, values_from=count) %>% 
+  rowwise() %>% 
+  rename_with(~paste0("count(", ., ")"), is.numeric)
+```
+
+These numbers are very likely to be an under-estimation, since many transcripts are missed in single-cell RNA-seq.
+
+There are more cells transduced with Cerulean than Venus in the LK03V_REDHC samples, and Venus than Cerulean in the LK03C_REDHV samples, which supports the conclusion that REDH transduced more cells than LK03.  
+
+However, there are two problems with using these count data.  The first is that single-cell data are prone to 'dropout', where many transcripts from individual cells are not observed. [This paper](https://www.nature.com/articles/nmeth.2967) characterises this phenomenon:
+
+> ... the overall dropout rates are consistently higher in some single-cell samples than in others ... [and] the dropout rate for a given cell depends on the average expression magnitude of a gene in a population, with dropouts being more frequent for genes with lower expression magnitude
+
+Since both Venus and Cerulean are weakly expressed, we would expect the dropout rate to be high, and therefore there will be a lot of stochasticiity in the results.
+
+The second is practical: I'm not sure what statistical test is to support the conclusion that there are more cells transduced with REDH than LK03. This is count data so it is likely to follow a negative binomial (not normal) distribution, so we can't do any parametric statistics.  The data could almost be represented in a 2x2 contigency table on which we could do McNemar's test, except that the expression of Venus and Cerulean is not dichotomous (cells don't always express one or the other). Perhaps there are some specific single-cell packages that address this question? I'll come back to this later.
+
+Instead, perhaps we can just look for differential expression of REDH and LK03 in these cells.
+
+
+### Differential expression - transduced cells
+
+I subsetted the transduced cells from the 'LK03_REDHV' and 'LK03V_REDHC' samples to do some differential expression analysis.  The cells transduced with either AAV look like this:
+
+```{r fig.width=10, fig.height=5}
+DimPlot(cells.hep.AAV, group.by="cell.type", split.by="dataset.type")
+```
+
+This is not particularly good - there are very few cells, so we probably won't be able to conclude very much.  But try anyway...
+
+
+```{r fig.height=4, fig.width=4}
+
+theme_set(cowplot::theme_cowplot())
+
+# get average expression of each genes amongst hepatocytes
+avg.cells.hep.AAV <- as.data.frame(log1p(AverageExpression(cells.hep.AAV, verbose=FALSE, group.by="dataset.type")$RNA))
+avg.cells.hep.AAV$gene <- rownames(avg.cells.hep.AAV)
+
+# get average expression of genes of interest
+hep.avg.cells.hep.AAV <- avg.cells.hep.AAV %>% 
+  filter(gene %in% mark)
+
+p2 <- ggplot(avg.cells.hep.AAV, aes(x=LK03C_REDHV, y=LK03V_REDHC, label=gene) ) +
+  geom_point(alpha=0.5, color="ivory4") +
+  geom_abline() +
+  ggtitle("`Transduced hepatocytes") +
+  geom_point(data=hep.avg.cells.hep.AAV, color="dodgerblue3") +
+  ggrepel::geom_text_repel(data=hep.avg.cells.hep.AAV, color="dodgerblue3") +
+  labs(x="LK03C_REDHV expression",
+       y="LK03V_REDHC expression") 
+
+p2
+```
+
+Repeating the differential expression analysis with these cells:
+```{r}
+Idents(cells.hep.AAV) <- cells.hep.AAV$dataset.type
+
+cer_venus.markers.AAV <- FindMarkers(cells.hep.AAV, ident.1="LK03C_REDHV", ident2="LK03V_REDHC", logfc.threshold = 0.05, features=mark)
+```
+
+
+```{r}
+cer_venus.markers.AAV %>% 
+  filter(str_detect(rownames(cer_venus.markers.AAV), "CERULEAN|VENUS"))
+```
+
+Now we see a bigger difference for Venus (higher for REDH than LK03), but not for Cerulean.  We probably just didn't really see enough transduced cells to say for sure.   I think in this case the p-values are not really representative of the level of statistical certaintly of the conclusion (they seem really small).
+
+### Different Zonation for REDH?
+
+> Besides higher transduction, better spreading? Map reads to portal/central hepatocytes?
+
+The best visualization for this is perhaps the one above, which I repeat here:
+
+```{r}
+patchwork::wrap_plots(clust[[1]], clust[[2]], clust[[3]], clust.legend,
+                      cerulean[[1]], cerulean[[2]], cerulean[[3]], cerulean.legend,
+                      venus[[1]], venus[[2]], venus[[3]], venus.legend)
+```
+
+We can also visualise the cluster-wise expression in a violin plot.
+
+```{r fig.height=4, fig.width=8}
+Idents(cells.hep) <- cells.hep$cell.type.shortest
+
+p1 <- VlnPlot(cells.hep, mark)
+p1
+```
+
+I don't compute the number of cells expressing Venus/Cerulean in each cluster in each sample, because the drop-out problem is likely to be even more prevalent when dealing with the small numbers of cells in each cluster.
+
+### Differential expression - all hepatoctyes
+
+Instead, repeat the differential expression analysis above, but now I look for differentially expressed genes between the two samples (LK03C_REDHV and LK03V_REDHC) in each cluster, and look for Venus and Cerulean in the results.  I compare LK03C_REDHV (group 1) vs LK03V_REDHC (group 2).
+
+First are the results from all the hepatocytes:
+
+```{r include=FALSE}
+Idents(cells.hep) <- cells.hep$dataset.type
+
+
+hep.clust.markers <- tibble()
+for (clust in unique(cells.hep$cell.type.shortest)) {
+  
+  cells.subset <- subset(cells.hep, cell.type.shortest == clust)
+  
+  markers <-  FindMarkers(cells.subset, ident.1="LK03C_REDHV", ident2="LK03V_REDHC", logfc.threshold = 0.00001, features=mark, min.pct=0.05)
+  
+  markers <- markers %>% 
+    as_tibble() %>% 
+    mutate(gene = rownames(markers)) %>% 
+    mutate(cluster = clust)
+  
+  hep.clust.markers <- bind_rows(hep.clust.markers, markers)
+}
+
+
+
+```
+```{r}
+hep.clust.markers
+```
+
+
+It looks like Venus expression is higher in the Mid-Zonal and Portal LK03C_REDHV cells compared to the Mid-zonal and Portal LK03C_REDHV cells, respectivley.  The difference is higher in the Portal cells compared to the mid-zonal ones.  Cerulean expression does not differ in either cluster.  There's also no difference in the Central cluster.
+
+### Differential expression - only transduced hepatocytes
+
+It's not ideal to compare only the transudced hepatocytes because a) they're probably not the only transdced hepatocytes because of dropout and b) there are so few cells in this group.  However, the results if we only consider the transduced cells:
+
+```{r include=FALSE}
+Idents(cells.hep.AAV) <- cells.hep.AAV$dataset.type
+
+
+# run FindMarkers separately on each cluster
+AAV.clust.markers <- tibble()
+for (clust in unique(cells.hep.AAV$cell.type.shortest)) {
+  
+  # subset cells from this cluster
+  cells.subset <- subset(cells.hep.AAV, cell.type.shortest == clust)
+  
+  # find markers
+  markers <-  FindMarkers(cells.subset, ident.1="LK03C_REDHV", ident2="LK03V_REDHC", logfc.threshold = 0.00001, features=mark, min.pct=0.05)
+  
+  # add genes and cluster column
+  markers <- markers %>% 
+    as_tibble() %>% 
+    mutate(gene = rownames(markers)) %>% 
+    mutate(cluster = clust)
+  
+  # combine
+  AAV.clust.markers <- bind_rows(AAV.clust.markers, markers)
+}
+
+
+
+```
+```{r}
+AAV.clust.markers %>% 
+  arrange(cluster, gene)
+```
+
+When comparing LK03C_REDHV to LK03V_REDHC, see less Cerulean and more Venus in the Portal cluster, more Venus in the mid-zonal cluster (but no difference for Cerulean), and no difference in the Central cluster.  The differences are quite small (logFC close to 0).
+
+
+## Change in transcriptome of cells transduced with AAV
+
+There were also some questions related to how AAV transduction changes the transcriptome of the cells:
+
+- Change in transcriptome of cells transduced with AAV? P21/P53 activation? 
+  -	Egfr: hepatocyte proliferation + liver regeneration [should be activated in hFRG heps? and not in pre-engraftment]
+  -	Btg2: inhibits hepatocyte proliferation [opposite?]
+  -	Phlda3, Bax, Aen, Mdm2, Cdkn1a, Trp53cor1/LincRNA-p21 (p53/Akt signaling)
+  
+### Proliferation genes
+
+Here are the `FeaturePlot`s for the proliferation genes:
+```{r fig.width=10, fig.height=5}
+prolif.genes <- c("EGFR", "BTG2")
+
+# get all samples except for lowly engrafted ones
+cells.hep2 <- subset(cells, dataset.type != "low")
+# only look at hepatocytes
+cells.hep2 <- subset(cells.hep2, cell.type.shortest != "Endothelial")
+
+Idents(cells.hep2) <- cells.hep2$cell.type.shortest
+DefaultAssay(cells.hep2) <- "RNA"
+
+featurePlotRow <- function(cells, feature, split) {
+  # make plots
+  plots <- FeaturePlot(cells, features=feature, split.by=split, keep.scale="all", order=TRUE, combine=FALSE)
+  # get legend
+  legend <- get_legend(plots[[length(plots)]])
+  # remove legends from all plots
+  plots <- purrr::map(plots, ~.+NoLegend())
+  # add legend to list of plots
+  plots[[length(plots) + 1]] <- legend
+  
+  return(plots)
+  
+}
+
+
+# make plots for each gene
+plots <- purrr::map(prolif.genes, ~featurePlotRow(cells.hep2, ., "dataset.type"))
+
+# flatten list of lists
+plots <- purrr::reduce(plots, c)
+
+patchwork::wrap_plots(plotlist=plots, nrow=length(prolif.genes))
+
+# seruat doesn't make legends :(
+#FeaturePlot(cells.hep2, features=prolif.genes, split.by="dataset.type",  keep.scale="feature", order=TRUE)
+```
+
+If we combine the transduced cells, it looks like this:
+
+```{r fig.width=10, fig.height=5}
+cells.hep2$treatment <- case_when(
+  cells.hep2$dataset.type == "hep" ~ "pre-engraftment",
+  cells.hep2$dataset.type == "high" ~ "engrafted",  
+  str_detect(cells.hep2$dataset.type, "LK") ~ "transduced", 
+)
+
+
+# make plots for each gene
+plots <- purrr::map(prolif.genes, ~featurePlotRow(cells.hep2, ., "treatment"))
+
+# flatten list of lists
+plots <- purrr::reduce(plots, c)
+
+patchwork::wrap_plots(plotlist=plots, nrow=length(prolif.genes))         
+
+#FeaturePlot(cells.hep2, features=prolif.genes, split.by="treatment",  keep.scale="feature", order=TRUE)
+```
+
+We can also plot the same data as violins:
+
+```{r fig.height = 4, fig.width=8}
+Idents(cells.hep2) <- cells.hep2$treatment
+VlnPlot(cells.hep2, features=prolif.genes)
+```
+
+And split by cluster:
+
+
+```{r fig.height = 4, fig.width=8}
+Idents(cells.hep2) <- cells.hep2$cell.type.shortest
+p <- VlnPlot(cells.hep2, features=prolif.genes, split.by = "treatment", idents = levels(cells.hep2))
+legend <- get_legend(VlnPlot(cells.hep2, features="EGFR", split.by="treatment", idents = levels(cells.hep2)))
+cowplot::plot_grid(p, legend, nrow=1, rel_widths=c(1, 0.1))
+```
+
+
+Here I compare the expression level of these genes between the pre-engraftment hepatocytes ('hep') and the post-engraftment hepatocytes ('high'):
+
+```{r}
+Idents(cells.hep2) <- cells.hep2$treatment
+FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="engrafted", logfc.threshold = 0.00001, features=prolif.genes, min.pct=0) 
+```
+These genes are both expressed a very slighlty more highly in the highly engrafted samples compared to the pre-engraftment samples.
+
+
+Comparing the highly engrafted samples to the transduced cells:
+```{r}
+FindMarkers(cells.hep2, ident.1="engrafted", ident2="transduced", logfc.threshold = 0.00001, features=prolif.genes, min.pct=0)
+```
+The expression is slightly lower in the transduced samples compared to the highly engrafted samples.
+
+We can also compare between the pre-engraftment hepatocytes and the engrafted, transduced hepatocytes:
+
+```{r}
+FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="transduced", logfc.threshold = 0.00001, features=prolif.genes, min.pct=0)
+```
+
+### p53/Akt signaling
+
+The genes of interest here are: Phlda3, Bax, Aen, Mdm2, Cdkn1a, Trp53cor1/LincRNA-p21.  However, "PT53COR1" wasn't in the data (it might have been dropped during preprocessing, or it might not have been annotated in the genome version used for alignment).
+```{r fig.height=10, fig.width=10}
+p53_akt.genes <- c("PHLDA3", "BAX", "AEN", "MDM2", "CDKN1A")
+
+
+Idents(cells.hep2) <- cells.hep2$cell.type.shortest
+DefaultAssay(cells.hep2) <- "RNA"
+
+
+plots <- purrr::map(p53_akt.genes, ~featurePlotRow(cells.hep2, ., "dataset.type"))
+
+# flatten list of lists
+# https://stackoverflow.com/questions/16300344/how-to-flatten-a-list-of-lists
+plots <- purrr::reduce(plots, c)
+
+                    
+patchwork::wrap_plots(plotlist=plots, nrow=length(p53_akt.genes))         
+                
+```
+
+
+
+Here I compare the expression level of these genes between the pre-engraftment hepatocytes ('hep') and the post-engraftment hepatocytes ('high'):
+
+```{r}
+Idents(cells.hep2) <- cells.hep2$treatment
+FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="engrafted", logfc.threshold = 0.00001, features=p53_akt.genes, min.pct=0)
+```
+
+Comparing the highly engrafted samples to the transduced cells:
+```{r}
+
+FindMarkers(cells.hep2, ident.1="engrafted", ident2="transduced", logfc.threshold = 0.00001, features=p53_akt.genes, min.pct=0)
+```
+
+We can also compare between the pre-engraftment hepatocytes and the engrafted, transduced hepatocytes:
+
+```{r}
+FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="transduced", logfc.threshold = 0.00001, features=p53_akt.genes, min.pct=0)
+```
+
+
+
+## Murine AAV transduction
+-	Murine transduction by prototypical AAV-LK03 mainly. Confirmed with scRNA?
