@@ -148,10 +148,14 @@ counts %>%
 To compare the expression of Cerulean and Venus, I focus on the transduced samples ('LK03V_REDHC' and 'LK03C_REDHV').  The main question here: is the expression of Cerulean and Venus different between these two samples?
 
 ```{r}
+DefaultAssay(cells) <- "RNA"
+
 # "AAV-CERULEAN-BC-3", "AAV-VENUS-BC-1" 
 cells.sel <- subset(cells, dataset.type %in% c("high", "LK03C_REDHV", "LK03V_REDHC"))
 DefaultAssay(cells.sel) <- "RNA"
 mark <- c("AAV-CERULEAN-BC-3",  "AAV-VENUS-BC-1" )
+
+DefaultAssay(cells.sel) <- "RNA"
 ```
 
 
@@ -207,6 +211,8 @@ theme_set(cowplot::theme_cowplot())
 
 cells.hep <- subset(cells.sel, cell.type.shortest != "Endothelial")
 cells.hep <- subset(cells.hep, dataset.type %in% c("LK03C_REDHV", "LK03V_REDHC"))
+
+DefaultAssay(cells.hep) <- "RNA"
 
 # get average expression of each genes amongst hepatocytes
 avg.cells.hep <- as.data.frame(log1p(AverageExpression(cells.hep, verbose=FALSE, group.by="dataset.type")$RNA))
@@ -476,7 +482,7 @@ AAV.clust.markers %>%
 When comparing LK03C_REDHV to LK03V_REDHC, see less Cerulean and more Venus in the Portal cluster, more Venus in the mid-zonal cluster (but no difference for Cerulean), and no difference in the Central cluster.  The differences are quite small (logFC close to 0).
 
 
-## Change in transcriptome of cells transduced with AAV
+## Change in transcriptome of cells transduced with AAV - comparing amongst all cells
 
 There were also some questions related to how AAV transduction changes the transcriptome of the cells:
 
@@ -532,7 +538,7 @@ If we combine the transduced cells, it looks like this:
 cells.hep2$treatment <- case_when(
   cells.hep2$dataset.type == "hep" ~ "pre-engraftment",
   cells.hep2$dataset.type == "high" ~ "engrafted",  
-  str_detect(cells.hep2$dataset.type, "LK") ~ "transduced", 
+  str_detect(cells.hep2$dataset.type, "LK") ~ "AAV_treated", 
 )
 
 
@@ -590,7 +596,7 @@ FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="transduced", logfc.th
 
 The genes of interest here are: Phlda3, Bax, Aen, Mdm2, Cdkn1a, Trp53cor1/LincRNA-p21.  However, "PT53COR1" wasn't in the data (it might have been dropped during preprocessing, or it might not have been annotated in the genome version used for alignment).
 ```{r fig.height=10, fig.width=10}
-p53_akt.genes <- c("PHLDA3", "BAX", "AEN", "MDM2", "CDKN1A")
+p53_akt.genes <- c("PHLDA3", "BAX", "AEN", "MDM2", "CDKN1A", "TP53")
 
 
 Idents(cells.hep2) <- cells.hep2$cell.type.shortest
@@ -630,6 +636,265 @@ FindMarkers(cells.hep2, ident.1="pre-engraftment", ident2="transduced", logfc.th
 ```
 
 
+## Change in transcriptome of cells transduced with AAV - compare pre-engraftment against cells with AAV transcripts
+
+The above section has the problem that it is possible that the 'transduced' samples may contain many untransduced cells.  So instead, for the samples that got AAV, I subset only the cells where AAV transcripts were observed.  This approach is a bit conservative, since there are likely to be many cells that were transduced but we didn't observe any AAV transcripts because of dropout, but this way we are certain that all the cells in the AAV samples we're comparing were transduced.
+
+
+```{r fig.width=10, fig.height=5}
+
+cells.hep2[['percent.AAV']] <- PercentageFeatureSet(cells.hep, pattern="AAV-CERULEAN-BC-3|AAV-VENUS-BC-1")
+
+cells.hep3 <- subset(cells.hep2, (treatment=="transduced" & percent.AAV > 0) | treatment != "transduced")
+
+cells.hep3
+
+
+Idents(cells.hep3) <- cells.hep3$cell.type.shortest
+DefaultAssay(cells.hep3) <- "RNA"
+
+DimPlot(cells.hep3, group.by="cell.type", split.by="dataset.type")
+```
+
+
+Now we have a pretty small number of cells in the transduced condition, so it's probably best to combine the LK03C_REDHV and LK03C_REDHC conditions
+
+```{r fig.width=10, fig.height=5}
+cells.hep3$treatment <- case_when(
+  cells.hep3$dataset.type == "hep" ~ "pre-engraftment",
+  cells.hep3$dataset.type == "high" ~ "engrafted",  
+  str_detect(cells.hep3$dataset.type, "LK") ~ "transduced", 
+)
+
+DimPlot(cells.hep3, group.by="cell.type", split.by="treatment")
+```
+
+
+### Proliferation genes
+
+
+Now if we look at the profileration genes from before in these cells, the DimPlots look like this:
+
+```{r}
+# make plots for each gene
+plots <- purrr::map(prolif.genes, ~featurePlotRow(cells.hep3, ., "treatment"))
+
+# flatten list of lists
+plots <- purrr::reduce(plots, c)
+
+patchwork::wrap_plots(plotlist=plots, nrow=length(prolif.genes))
+```
+
+We can also plot the same data as violins:
+
+```{r fig.height = 4, fig.width=8}
+Idents(cells.hep3) <- cells.hep3$treatment
+VlnPlot(cells.hep3, features=prolif.genes)
+```
+
+It doesn't look like the expression of these genes are too different between the different treatments.  Let's check out the results of `FindMarkers`
+
+```{r}
+Idents(cells.hep3) <- cells.hep3$treatment
+FindMarkers(cells.hep3, ident.1="pre-engraftment", ident2="engrafted", logfc.threshold = 0.00001, features=prolif.genes, min.pct=0) 
+```
+The p-values are small but the fold-changes are also close to zero so probably there isn't too much difference.
+
+### p53/Akt signaling
+
+The genes of interest here are: Phlda3, Bax, Aen, Mdm2, Cdkn1a, Trp53cor1/LincRNA-p21.  However, "PT53COR1" wasn't in the data (it might have been dropped during preprocessing, or it might not have been annotated in the genome version used for alignment).
+```{r fig.height=10, fig.width=10}
+
+
+plots <- purrr::map(p53_akt.genes, ~featurePlotRow(cells.hep3, ., "treatment"))
+
+# flatten list of lists
+# https://stackoverflow.com/questions/16300344/how-to-flatten-a-list-of-lists
+plots <- purrr::reduce(plots, c)
+
+                    
+patchwork::wrap_plots(plotlist=plots, nrow=length(p53_akt.genes))         
+                
+```
+
+Let's compare the average expression of these genes between pre-engraftment hepatocytes and engrafted ones, and also engrafted ones and transduced ones:
+
+```{r fig.height=5, fig.width=10}
+
+compExprPlot <- function(cells, genes, group_by, ident1, ident2) {
+  
+  # get average expression of each gene in each condition
+  cells.plot <-as.data.frame(log1p(
+    AverageExpression(cells, verbose=FALSE, group.by=group_by)$RNA
+    ))
+  
+  # add gene names as colummn
+  cells.plot$gene <- rownames(cells.plot)
+  
+  cells.plot.genes <- cells.plot %>% 
+    filter(gene %in% genes)
+  
+  p <- ggplot(cells.plot, aes(x=!!sym(ident1), y=!!sym(ident2), label=gene)) +
+    geom_point(alpha=0.4, color="ivory4") +
+    geom_abline() +
+    geom_point(data = cells.plot.genes, color="dodgerblue3") +
+    ggrepel::geom_text_repel(data = cells.plot.genes, color="dodgerblue3") +
+    labs(x=glue::glue("expression in {ident1}"), y=glue::glue("expression in {ident2}")) 
+  
+  return(p)
+        
+}
+
+p1 <- compExprPlot(cells.hep3, p53_akt.genes, "treatment", "pre-engraftment", "engrafted")
+p2 <- compExprPlot(cells.hep3, p53_akt.genes, "treatment", "engrafted", "transduced")
+
+p1 + p2
+```
+
+Conducting a differential expression analysis for the pre-engraftment vs engrafted:
+
+```{r}
+Idents(cells.hep3) <- cells.hep3$treatment
+FindMarkers(cells.hep3, ident.1="pre-engraftment", ident2="engrafted", logfc.threshold = 0.00001, features=p53_akt.genes, min.pct=0) 
+```
+
+And for the engrafted vs transduced:
+
+```{r}
+Idents(cells.hep3) <- cells.hep3$treatment
+FindMarkers(cells.hep3, ident.1="engrafted", ident2="transduced", logfc.threshold = 0.00001, features=p53_akt.genes, min.pct=0) 
+```
+
+
+
+
+
+
+## Other genes - for interest
+
+Sam asked about OTC in this dataset.
+
+```{r fig.width=12, fig.height=6}
+DefaultAssay(cells.hep2) <- "RNA"
+
+clust <- purrr::map(unique(cells.hep2$dataset.type), ~ DimPlot(subset(cells.hep2, dataset.type==.), group.by="cell.type.shortest"))
+clust2 <- purrr::map(unique(cells.hep2$dataset.type), ~ DimPlot(subset(cells.hep2, dataset.type==.), group.by="cell.type.shorter"))
+otc <- FeaturePlot(cells.hep2, "OTC", split.by="dataset.type", order=TRUE, keep.scale="all", combine=FALSE)
+
+
+clust.legend <- get_legend(clust[[1]])
+clust2.legend <- get_legend(clust2[[1]])
+otc.legend <- get_legend(otc[[1]])
+
+clust <- purrr::map(clust, ~.+NoLegend())
+clust2 <- purrr::map(clust2, ~.+NoLegend())
+otc <- purrr::map(otc, ~.+NoLegend())
+
+clust <- c(clust, list(clust.legend))
+clust2 <- c(clust2, list(clust2.legend))
+otc <- c(otc, list(otc.legend))
+
+
+
+patchwork::wrap_plots(c(clust, clust2, otc), nrow=3)
+
+
+```
+
+
+Plot the expression level of OTC in the different cell types and samples
+
+```{r}
+VlnPlot(cells.hep2, "OTC", group.by = "cell.type.shortest", split.by="treatment")
+```
+
+OTC appears to be more highly expressed in the engrafted and AAV treated samples.
 
 ## Murine AAV transduction
--	Murine transduction by prototypical AAV-LK03 mainly. Confirmed with scRNA?
+
+Another thing to check in this data is how the AAVs tend to transduce mouse cells compared to human cells.  Let's check this by re-importing the data, without removing human cells or genes.
+
+```{r include=FALSE}
+rm(list = ls())
+
+source("workflow.R")
+
+cache_path <- "cache"
+
+cache_file <- file.path(cache_path, "integerated_together_with_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
+data.obj <- import_with_mouse()
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+# do integration
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering in the integrated data
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+```
+
+Here's a look at the data, without removing the mouse cells and genes:
+
+```{r fig.width = 6, fig.height=6}
+DimPlot(cells, label=TRUE, repel=TRUE)
+```
+
+And here, split by dataset:
+
+```{r fig.width = 10, fig.height=4}
+DimPlot(cells, split.by="dataset.type", )
+```
+
+Just judging by the number of cells, it looks like 
+
+
+To identify the mouse and human clusters, I use `FindConservedMarkers`.
+
+```{r}
+# For performing differential expression after integration, we switch back to the original
+# data
+DefaultAssay(cells) <- "RNA"
+
+mouse_markers_file <- file.path(cache_path, "mouse_markers.RDS")
+
+if (! file.exists(mouse_markers_file)) {
+  mouse.markers <- FindAllMarkers(cells, only.pos = TRUE, logfc.threshold=0.25)
+  saveRDS(mouse.markers, mouse_markers_file)
+} else {
+  
+}
+
+
+
+
+
+```
+
+
+

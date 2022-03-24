@@ -67,7 +67,7 @@ Has this dataset already been filtered?
 
 The names on the x-axis come from the cell names in the data that I downloaded from the GEO.  I'm not sure what they mean, but some of them might refer to clusters?  They mention things like 'CD34'.
 
-Finding varable features:
+Finding variable features:
 
 ```{r}
 aizarani <- NormalizeData(aizarani, normalization.method = "LogNormalize", scale.factor = 10000)
