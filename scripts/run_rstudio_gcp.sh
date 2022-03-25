@@ -5,7 +5,7 @@ set -e
 # https://www.rc.virginia.edu/userinfo/howtos/rivanna/launch-rserver/
 
 if [ ! -e scrna_rstudio.sif ]; then
-	singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:5
+	singularity pull ${PWD}/scrna_rstudio.sif docker://szsctt/r_scrna:6
 	echo "finished pulling"
 fi
 
