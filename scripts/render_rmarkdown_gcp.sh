@@ -20,11 +20,14 @@ mkdir -p rendered
 
 RSCRIPT="singularity exec ../scripts/scrna_rstudio.sif ../scripts/render.R rendered"
 
+
+eval "${RSCRIPT} vector.Rmd"
+
 eval "${RSCRIPT} aizarani.Rmd"
 
 eval "${RSCRIPT} integration.Rmd"
 
-eval "${RSCRIPT} figure_1.Rmd"
+eval "${RSCRIPT} figure1.Rmd"
 
 eval "${RSCRIPT} aizarani_integration_hepatocytes.Rmd"
 
