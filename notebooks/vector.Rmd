@@ -810,7 +810,7 @@ VlnPlot(cells.hep2, "OTC", group.by = "cell.type.shortest", split.by="treatment"
 
 OTC appears to be more highly expressed in the engrafted and AAV treated samples.
 
-## Murine AAV transduction
+## Comparing murine and human AAV transduction
 
 Another thing to check in this data is how the AAVs tend to transduce mouse cells compared to human cells.  Let's check this by re-importing the data, without removing human cells or genes.
 
@@ -859,9 +859,11 @@ saveRDS(cells, cache_file)
 
 ```
 
+### Clusters and cell types
+
 Here's a look at the data, without removing the mouse cells and genes:
 
-```{r fig.width = 6, fig.height=6}
+```{r fig.width = 4, fig.height=4}
 DimPlot(cells, label=TRUE, repel=TRUE)
 ```
 
@@ -874,7 +876,7 @@ DimPlot(cells, split.by="dataset.type", )
 Just judging by the number of cells, it looks like 
 
 
-To identify the mouse and human clusters, I use `FindConservedMarkers`.
+To identify the cell types of the mouse and human clusters, I use `FindAllMarkers` to find marker genes for each cluster.
 
 ```{r}
 # For performing differential expression after integration, we switch back to the original
@@ -887,14 +889,216 @@ if (! file.exists(mouse_markers_file)) {
   mouse.markers <- FindAllMarkers(cells, only.pos = TRUE, logfc.threshold=0.25)
   saveRDS(mouse.markers, mouse_markers_file)
 } else {
-  
+  mouse.markers <- readRDS(mouse_markers_file)
 }
-
-
-
 
 
 ```
 
+
+```{r}
+mouse.markers %>% 
+  mutate(gene=rownames(mouse.markers)) %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = avg_log2FC, n=3)
+        
+```
+
+
+The clusters are therefore:
+- 0: Human 
+- 1: Human 
+- 2: Mouse
+- 3: Mouse 
+- 4: Mouse 
+- 5: Human 
+- 6: Mouse  
+- 7: Human 
+- 8: Mouse 
+- 9: Human 
+- 10: Mouse
+- 11: Human
+- 12: Mouse
+
+```{r fig.width = 10, fig.height=4}
+
+
+p1 <- DimPlot(cells, split.by="dataset.type", group.by="org")
+p2 <- DimPlot(cells, split.by="seurat_clusters", group.by="org")
+```
+
+```{r}
+cells$org <- case_when(
+  cells$seurat_clusters %in% c(0, 1, 5, 7, 9, 11) ~ "human",
+  cells$seurat_clusters %in% c(2,3,4,6,8,10,12) ~ "mouse"
+)
+
+mouse_clusters_markers_file <- file.path(cache_path, "mouse_cluster_markers.RDS")
+
+if (! file.exists(mouse_clusters_markers_file)) {
+  mouse.clust.markers <- FindAllMarkers(subset(cells, org=="mouse"), only.pos = TRUE, logfc.threshold=0.25)
+  saveRDS(mouse.clust.markers, mouse_clusters_markers_file)
+} else {
+  mouse.clust.markers <- readRDS(mouse_clusters_markers_file)
+}
+
+human_clusters_markers_file <- file.path(cache_path, "human_cluster_markers.RDS")
+
+if (! file.exists(human_clusters_markers_file)) {
+  human.clust.markers <- FindAllMarkers(subset(cells, org=="human"), only.pos = TRUE, logfc.threshold=0.25)
+  saveRDS(human.clust.markers, human_clusters_markers_file)
+} else {
+  human.clust.markers <- readRDS(human_clusters_markers_file)
+}
+
+```
+
+#### Mouse clusters
+
+To verify the identify of the mouse clusters, I re-ran `FindAllMarkers` with just the mouse cells.  The top 10 marker genes for each of the mouse clusters are:
+
+```{r}
+mouse.clust.markers %>% 
+  mutate(gene = rownames(mouse.clust.markers)) %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by=avg_log2FC, n=10)
+```
+
+
+- Cluster 2:  Hepatocytes? [PanglaoDB top matches are 'unknown', germ cells, hepatocytes](https://panglaodb.se/search.html?query=%22ABCC4,CYP2C38,GCLC,AKR1C6,HPSE2,GSTP2,AIRN,SLC7a11,ACSl1%22&species=2&tumor=0&nonadult=0)
+- Cluster 3: Hepatocytes? [Most genes aren't found but PanglaoDB top match is hepatocytes ](https://panglaodb.se/search.html?query=%22Cyp3a251,Cps11,mug21,dpyd1,mat1a1,pck11,slc7a21,hal,cyp2b91,kynu1%22&species=2&tumor=0&nonadult=0)
+
+To confirm that clusters 2 and 3 these are hepatocytes, here's the expression of the [top liver markers on PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27Hepatocytes%27) in the data:
+
+```{r}
+FeaturePlot(cells, features=c("Mus--------Alb", "Mus--------Cyp2e1", "Mus--------Ttr", "Mus--------Ucp2", "Mus--------Gck", "Mus--------Lrp5"))
+```
+
+- Cluster 4: [Macrophages](https://panglaodb.se/search.html?query=%22Slc8a1,Runx1,fyb,hdac9,cd5l,bank1,abr,cd84,myo9a,gpnmb%22&species=2&tumor=0&nonadult=0)
+- Cluster 6: [Neurons](https://panglaodb.se/search.html?query=%22Nrxn1,Nkain2,Ank3,Ntm,Zfp804b,Sntg1,Robo2,Rbms3,Gpc6,Lhfp%22&species=2&tumor=0&nonadult=0)
+- Cluster 8: [Endothelial cells](https://panglaodb.se/search.html?query=%22Stab2,Ptprb,Fbl7,St6galnac3,meis21,plpp1,plekhg11,adgrl4,stox2,ldb21%22&species=2&tumor=0&nonadult=0)
+- Cluster 10: [Neurons](https://panglaodb.se/search.html?query=%22Pkhd1,kcnip4,kcnma1,pdgfd2,ppp2r2b,2610307p16rik,erbb41,bicc11,ctnna2,kifc3%22&species=2&tumor=0&nonadult=0)
+- Cluster 12: [Unknown - no cell matches for any of the genes](https://panglaodb.se/search.html?query=%22slc8a11,gm202751,cd841,slc7a81,myo9a1,abcg31,adhhc141,apobec11,slc40a11,sat11%22&species=2&tumor=0&nonadult=0)
+
+#### Human clusters
+
+As for the human genes, I'm calling clusters 0, 1, 5, 7, 9 hepatocytes.  Checking the expression of the same liver markers as above in the human clusters:
+
+```{r}
+FeaturePlot(cells, features=c("Homo-w-AAV-ALB", "Homo-w-AAV-CYP2E1", "Homo-w-AAV-TTR", "Homo-w-AAV-UCP2", "Homo-w-AAV-GCK", "Homo-w-AAV-LRP5"))
+```
+
+I'm pretty confident calling these hepatocytes.  Finally, cluster 11:
+```{r}
+human.clust.markers %>% 
+  mutate(gene = rownames(human.clust.markers)) %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by=avg_log2FC, n=10) %>% 
+  filter(cluster == 11)
+```
+
+
+The marker genes for this cluster indicate they're likely to be [endothelial cells](https://panglaodb.se/search.html?query=%22ldb2,flt1,st6galnac3,ptprb,akap12,tacc11,mrc1,bmper,fbxl7,rbms31%22&species=3&tumor=0&nonadult=0).
+
+
+
+After all that, our annotation of the cell types is this:
+
+```{r}
+cells$cell.type <- case_when(
+  cells$seurat_clusters %in% c(0, 1, 5, 7, 9) ~ "human hepatocytes",
+  cells$seurat_clusters == 11 ~ "human EC",
+  cells$seurat_clusters %in% c(2,3) ~ "mouse hepatocytes",
+  cells$seurat_clusters  == 4 ~ "mouse macrophages",
+  cells$seurat_clusters %in% c(6,10) ~ "mouse neurons",
+  cells$seurat_clusters == 8 ~ "mouse EC",
+  cells$seurat_clusters == 12 ~ "mouse unknown"
+)
+
+
+Idents(cells) <- cells$cell.type
+
+DimPlot(cells)
+```
+
+
+Let's focus on the transduced samples.  We would like to know if LK03 and REDH prefer human or mouse hepatocytes
+
+```{r fig.width = 6, fig.width=10}
+cells$treatment <- case_when(
+  cells$dataset.type == "hep" ~ "pre-engraftment",
+  cells$dataset.type == "high" ~ "engrafted",  
+  str_detect(cells$dataset.type, "LK") ~ "AAV_treated", 
+)
+
+transduced <- subset(cells, treatment == "AAV_treated")
+DefaultAssay(transduced) <- "RNA"
+
+mark <- c("Homo-w-AAV-AAV-VENUS-BC-1", "Homo-w-AAV-AAV-CERULEAN-BC-3")
+p1 <- DimPlot(transduced)
+p2 <- DimPlot(transduced, group.by="org")
+p3 <- FeaturePlot(subset(cells, dataset.type == "LK03C_REDHV"), mark, order=TRUE)
+p4 <- FeaturePlot(subset(cells, dataset.type == "LK03V_REDHC"), mark, order=TRUE) 
+
+
+(p1 + p2) / p3 / p4
+```
+
+In the above, the top row shows the clusters of the integrated data, the middle row shows the expression of Cerulean and Venus for the 'LK03C_REDHV' samples, and the bottom row shows the expression of Cerulean and Venus for the 'LK03V_REDHC' samples.
+
+We can also plot the co-expression of Cerulean and Venus.  For the 'LK03C_REDHV' samples:
+
+```{r fig.height=4, fig.width=10}
+FeaturePlot(subset(cells, dataset.type == "LK03C_REDHV"), mark, order=TRUE, blend=TRUE)
+```
+
+And for the 'LK03V_REDHC' samples:
+```{r fig.height=4, fig.width=10}
+FeaturePlot(subset(cells, dataset.type == "LK03V_REDHC"), mark, order=TRUE, blend=TRUE)
+```
+
+If we just look at the 'hepatocyte' cell types:
+
+```{r}
+transduced$hep <- str_detect(transduced$cell.type, "hepatocytes")
+
+transduced.hep <- subset(transduced, hep)
+
+mark <- c("Homo-w-AAV-AAV-VENUS-BC-1", "Homo-w-AAV-AAV-CERULEAN-BC-3")
+p1 <- DimPlot(transduced.hep)
+p3 <- FeaturePlot(subset(transduced.hep, dataset.type == "LK03C_REDHV"), mark, order=TRUE)
+p4 <- FeaturePlot(subset(transduced.hep, dataset.type == "LK03V_REDHC"), mark, order=TRUE) 
+
+
+p1 / p3 / p4
+```
+
+
+
+
+I use `FindMarkers` to compare the expression of Cerulean and Venus between the human hepatocytes and the mouse hepatocytes.  First, for the "LK03V_REDHC" samples:
+
+```{r}
+Idents(transduced.hep) <- transduced.hep$cell.type
+DefaultAssay(transduced.hep) <- "RNA"
+FindMarkers(subset(transduced.hep, dataset.type=="LK03V_REDHC"), features=mark, ident.1="human hepatocytes", ident.2="mouse hepatocytes", logfc.threshold=0, min.pct=0)
+```
+
+Venus appears to be more strongly expressed in mouse hepatocytes (identity 2) than human, and vice versa for Cerulean, indicating that LK03 is more strongly expressed in mouse hepatocytes and REDH in human.
+
+Second, for the "LK03C_REDHV" samples:
+
+```{r}
+FindMarkers(subset(transduced.hep, dataset.type=="LK03C_REDHV"), features=mark, ident.1="human hepatocytes", ident.2="mouse hepatocytes", logfc.threshold=0, min.pct=0)
+```
+
+We see the opposite expression, which is consistent with the same conclusions (LK03 more strongly expressed in mouse than human hepatocytes, and the reverse for REDH).
+
+
+## Session info
+
+```{r}
+sessionInfo()
+```
 
 
