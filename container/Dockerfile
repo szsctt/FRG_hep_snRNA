@@ -3,10 +3,10 @@
 
 FROM rocker/verse:4.1.1
 
-#  $ docker build . -t szsctt/r_scrna:latest -t szsctt/r_scrna:5
+#  $ docker build . -t szsctt/r_scrna:latest -t szsctt/r_scrna:6
 #  $ docker run --rm -it szsctt/r_scrna:latest /bin/bash
 #  $ docker push szsctt/r_scrna:latest
-#  $ docker push szsctt/r_scrna:5
+#  $ docker push szsctt/r_scrna:6
 
 ENV DEBIAN_FRONTEND noninteractive
 

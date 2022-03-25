@@ -3,7 +3,7 @@
 install.packages(c("cowplot", "writexl", "wesanderson", "ggrepel", "DT", "devtools", 
 			"sf", "Seurat", "markdown", "rmarkdown", 
 			"plotly", "remotes", "R.utils", "ggplotify",
-			"magick", "ggimage"))
+			"magick", "ggimage", "scCATCH"))
 
 
 if (!requireNamespace("BiocManager", quietly = TRUE))
