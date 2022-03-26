@@ -15,7 +15,7 @@ output:
 ## Overview
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(fig.width = 7, fig.height=7, dev = c('pdf', 'png'))
+knitr::opts_chunk$set(fig.width = 7, fig.height=7, dev = c('png', 'pdf'))
 library(Seurat)
 library(tidyverse)
 library(RColorBrewer)
@@ -921,17 +921,17 @@ The clusters are therefore:
 - 12: Mouse
 
 ```{r fig.width = 10, fig.height=4}
-
+cells$org <- case_when(
+  cells$seurat_clusters %in% c(0, 1, 5, 7, 9, 11) ~ "human",
+  cells$seurat_clusters %in% c(2,3,4,6,8,10,12) ~ "mouse"
+)
 
 p1 <- DimPlot(cells, split.by="dataset.type", group.by="org")
 p2 <- DimPlot(cells, split.by="seurat_clusters", group.by="org")
 ```
 
 ```{r}
-cells$org <- case_when(
-  cells$seurat_clusters %in% c(0, 1, 5, 7, 9, 11) ~ "human",
-  cells$seurat_clusters %in% c(2,3,4,6,8,10,12) ~ "mouse"
-)
+
 
 mouse_clusters_markers_file <- file.path(cache_path, "mouse_cluster_markers.RDS")
 
