@@ -21,6 +21,9 @@ datasets <- list(
 import_one <- function(name) {
   
   mat <- file.path(data.dir, datasets[[name]], "outs", "filtered_feature_bc_matrix")
+  
+  
+  
   mat <- Seurat::Read10X(data.dir = mat)
   
   return(mat)
@@ -55,6 +58,9 @@ import_with_mouse <- function() {
   for (d in names(datasets)) {
     data.obj[[d]] <- import_one_with_mouse(d)
   }
+  
+  # add numbers to cell barcodes to prevent conflicts after merging
+  data.obj <- make_cell_barcodes_distinct(data.obj)
   
   return(data.obj)
   
@@ -121,9 +127,23 @@ import_without_mouse <- function() {
     data.obj[[d]] <- import_one_without_mouse(d)
   }
   
+  # add numbers to cell barcodes to prevent conflicts after merging
+  data.obj <- make_cell_barcodes_distinct(data.obj)
+  
   return(data.obj)
   
 } 
+
+make_cell_barcodes_distinct <- function(data.obj) {
+  # add numbers to cell barcodes to prevent conflicts after merging
+  j <- 1
+  for (dset in names(data.obj)) {
+    data.obj[[dset]]  <- RenameCells(data.obj[[dset]], new.names = paste0(colnames(data.obj[[dset]]), glue::glue("_{j}")))
+    j <- j + 1
+  }
+  
+  return(data.obj)
+}
 
 import_noMouse_merged <- function() {
   

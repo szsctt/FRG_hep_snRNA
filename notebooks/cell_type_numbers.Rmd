@@ -171,7 +171,7 @@ In the above table I combined the two replicates for each sample type, because I
 
 ```{r}
 integrated_together <- cells@meta.data
-integrated_together$cell_id <- str_extract(rownames(integrated_together), "[ACGT]+-1")
+integrated_together$cell_id <- rownames(integrated_together)
 
 get_metdata_with_cell_ids <- function(sample) {
   data <- queries[[sample]]@meta.data
@@ -185,8 +185,7 @@ integrated_aizarani <- tibble(
 ) %>% 
   rowwise() %>% 
   mutate(data = list(get_metdata_with_cell_ids(sample))) %>% 
-  unnest(data) %>% 
-  mutate(cell_id =  str_extract(cell_id, "[ACGT]+-1"))
+  unnest(data) 
 
 integrated_aizarani %>% 
   left_join(dplyr::select(integrated_together, cell_id, dataset.name), by="cell_id") %>% 
@@ -196,16 +195,18 @@ integrated_aizarani %>%
 ```
 
 
+
+
 And here is the data where I integrated all the datasets against each other:
 
 
 ```{r fig.height=10, fig.width=10}
-Idents(cells.section1) <- cells.section1$seurat_clusters
-p1 <- DimPlot(cells.section1) + ggtitle("Seurat Clusters")
-Idents(cells.section1) <- cells.section1$cell.type.shorter
-p2 <- DimPlot(cells.section1) + ggtitle("Named clusters")
-Idents(cells.section1) <- cells.section1$cell.type.shortest
-p3 <- DimPlot(cells.section1) + ggtitle("Combined clusters")
+Idents(cells) <- cells$seurat_clusters
+p1 <- DimPlot(cells) + ggtitle("Seurat Clusters")
+Idents(cells) <- cells$cell.type.shorter
+p2 <- DimPlot(cells) + ggtitle("Named clusters")
+Idents(cells) <- cells$cell.type.shortest
+p3 <- DimPlot(cells) + ggtitle("Combined clusters")
 cowplot::plot_grid(p1, p2, p3)
 ```
 
@@ -230,4 +231,27 @@ integrated_together %>%
   count(dataset.name, seurat_clusters)  %>% 
   pivot_wider(names_from = seurat_clusters, values_from = n)
 ```
+
+
+Try to plot this - on the UMAP plot from the second figure, color cells by their predicted cell type from the Aizarani integration
+
+```{r}
+cell_types <- tibble(
+  cell_id = colnames(cells)
+) %>% 
+  left_join(select(integrated_aizarani,predicted.cell.type, cell_id), by="cell_id")
+
+
+
+cells$aizarani.cell.type <- cell_types$predicted.cell.type
+
+
+Idents(cells) <- cells$aizarani.cell.type
+p4 <- DimPlot(cells) + ggtitle("Predicted cell type")
+
+p4
+
+```
+
+
 
