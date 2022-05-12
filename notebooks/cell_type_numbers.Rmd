@@ -1,0 +1,233 @@
+---
+title: "R Notebook"
+output:
+  html_notebook:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('png', 'pdf'))
+library(Seurat)
+library(RColorBrewer)
+library(tidyverse)
+library(cowplot)
+
+source("workflow.R")
+
+cache_path <- "cache"
+dir.create(cache_path)
+
+legend_text_size <- 10
+
+```
+```{r loadIntegratedWithAizarani, include=FALSE}
+
+cache_file <- file.path(cache_path, "integrated_with_aizarani.RDS")
+
+if (!file.exists(cache_file)) {
+  data <- integrated_with_aizarani()
+  saveRDS(data, cache_file)
+} else {
+  data <- readRDS(cache_file)
+}
+
+
+reference <- data[['aizarani']]
+queries <- data[names(data) != 'aizarani']
+```
+
+```{r loadIntegrated, include=FALSE}
+
+cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
+data.obj <- import_without_mouse()
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+# do integration
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering in the integrated data
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+```
+
+```{r annotate, include=FALSE}
+cells$cell.type <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
+  cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+  cells$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+  cells$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+  cells$seurat_clusters == 6 ~ "Endothelial cells (6)"
+)
+
+cells$cell.type.shorter <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal 0",
+  cells$seurat_clusters == 1 ~ "Mid-zonal 1",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal 2",
+  cells$seurat_clusters == 3 ~ "Central 3",
+  cells$seurat_clusters == 4 ~ "Portal 4",
+  cells$seurat_clusters == 5 ~ "Mid-zonal 5",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+cells$cell.type.shortest <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal",
+  cells$seurat_clusters == 1 ~ "Mid-zonal",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal",
+  cells$seurat_clusters == 3 ~ "Central",
+  cells$seurat_clusters == 4 ~ "Portal",
+  cells$seurat_clusters == 5 ~ "Mid-zonal",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+```
+
+
+Here is the data where I integrated all the datasets against the Aizarani reference:
+
+```{r AizIntegatedCellTypesAllDatasets, fig.width=7, fig.height=5}
+cellTypes <- unique(reference$paper.cluster.names)
+myColors <- brewer.pal(length(cellTypes),"Set3")
+names(myColors) <- cellTypes
+colScale <- scale_colour_manual(name = "grp",values = myColors)
+
+refplot <- DimPlot(reference, reduction="umap", group.by="cell.types") + ggtitle("Aizarani") + colScale
+queryplots.aizarani <- purrr::map(names(queries), 
+                       ~DimPlot(queries[[.]], reduction="ref.umap", group.by="predicted.cell.type") + 
+                         ggtitle(str_split(., "\\.")[[1]][1]) + 
+                         xlim(-15, 15) + 
+                         ylim(-12.5, 10) +
+                         colScale +
+                         NoLegend()
+                       
+                       )
+# https://stackoverflow.com/questions/27130610/legend-on-bottom-two-rows-wrapped-in-ggplot2-in-r
+legend.b <- cowplot::get_legend(refplot + 
+                                theme(legend.position="bottom", 
+                                      legend.box="vertical", text=element_text(size=legend_text_size), 
+                                      legend.title = element_blank()) + 
+                                guides(fill=guide_legend(nrow=5,byrow=TRUE))
+                              )
+
+
+aizarani.plots <- plot_grid(plotlist=c(list(refplot + NoLegend()), queryplots.aizarani))
+plot_grid(aizarani.plots, legend.b, ncol=1, rel_heights = c(1, 0.1))
+```
+
+
+How many cells are there of each type?
+
+```{r}
+tibble(
+  sample = names(queries)
+) %>% 
+  rowwise() %>% 
+  mutate(data = list(queries[[sample]]@meta.data)) %>% 
+  unnest(data) %>% 
+  count(sample, predicted.cell.type) %>% 
+  pivot_wider(names_from = "predicted.cell.type", values_from = n)
+  
+```
+In the above table I combined the two replicates for each sample type, because I integrated them with the reference together.  To get them separate counts for each replicate, I use the cell names in the original data.
+
+```{r}
+integrated_together <- cells@meta.data
+integrated_together$cell_id <- str_extract(rownames(integrated_together), "[ACGT]+-1")
+
+get_metdata_with_cell_ids <- function(sample) {
+  data <- queries[[sample]]@meta.data
+  data$cell_id <- rownames(data)
+  return(data)
+}
+
+
+integrated_aizarani <- tibble(
+  sample = names(queries)
+) %>% 
+  rowwise() %>% 
+  mutate(data = list(get_metdata_with_cell_ids(sample))) %>% 
+  unnest(data) %>% 
+  mutate(cell_id =  str_extract(cell_id, "[ACGT]+-1"))
+
+integrated_aizarani %>% 
+  left_join(dplyr::select(integrated_together, cell_id, dataset.name), by="cell_id") %>% 
+  count(dataset.name, predicted.cell.type) %>% 
+  pivot_wider(names_from = "predicted.cell.type", values_from = n)
+
+```
+
+
+And here is the data where I integrated all the datasets against each other:
+
+
+```{r fig.height=10, fig.width=10}
+Idents(cells.section1) <- cells.section1$seurat_clusters
+p1 <- DimPlot(cells.section1) + ggtitle("Seurat Clusters")
+Idents(cells.section1) <- cells.section1$cell.type.shorter
+p2 <- DimPlot(cells.section1) + ggtitle("Named clusters")
+Idents(cells.section1) <- cells.section1$cell.type.shortest
+p3 <- DimPlot(cells.section1) + ggtitle("Combined clusters")
+cowplot::plot_grid(p1, p2, p3)
+```
+
+I assume that all the cells that aren't hepatocytes in the first figure are the cluster down the bottom in the second figure (cluster 6).  Here I check how many cells from the first figure are in each of the clusters from the second figure.
+
+In the table below, the columns 0 through 6 are the "Seurat clusters" from the second figure, and the predicted.cell.type column is the cell type from the first figure.
+
+```{r}
+
+integrated_together %>% 
+  left_join(dplyr::select(integrated_aizarani, cell_id, predicted.cell.type), by="cell_id") %>% 
+  count(dataset.name, seurat_clusters, predicted.cell.type) %>% 
+  pivot_wider(names_from = seurat_clusters, values_from = n)
+
+```
+
+
+For comparison, here are the overall number of cells in clusters 0-6:
+
+```{r}
+integrated_together %>% 
+  count(dataset.name, seurat_clusters)  %>% 
+  pivot_wider(names_from = seurat_clusters, values_from = n)
+```
+
