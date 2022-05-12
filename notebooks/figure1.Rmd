@@ -161,7 +161,7 @@ cowplot::plot_grid(p1, p2, p3)
 
 
 
-The nubmer of cells of each type in each condition:
+The number of cells of each type in each condition:
 
 ```{r}
 tibble(
