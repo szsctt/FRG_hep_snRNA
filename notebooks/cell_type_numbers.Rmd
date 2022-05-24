@@ -1,13 +1,6 @@
 ---
-title: "R Notebook"
+title: "Extra analyses"
 output:
-  html_notebook:
-    df_print: paged
-    toc: true
-    toc_float:
-      collapsed: false
-      smooth_scroll: false
-    code_folding: hide
   html_document:
     keep_md: true
     df_print: paged
@@ -16,7 +9,16 @@ output:
       collapsed: false
       smooth_scroll: false
     code_folding: hide
+  html_notebook:
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
 ---
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('png', 'pdf'))
 library(Seurat)
@@ -50,36 +52,11 @@ queries <- data[names(data) != 'aizarani']
 
 ```{r loadIntegrated, include=FALSE}
 
-cache_file <- file.path(cache_path, "integerated_together_no_mouse.RDS")
+cache_file <- file.path(cache_path, "integrated_together_no_mouse.RDS")
 
 if (!file.exists(cache_file)) {
 
-data.obj <- import_without_mouse()
-
-## add column names for later
-for (i in seq_along(names(data.obj))) {
-  name <- names(data.obj)[i]
-  type <- stringr::str_replace(name, "\\d+$", "")
-  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
-  
-  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
-  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
-}
-
-# do integration
-features <- SelectIntegrationFeatures(object.list = data.obj)
-anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
-cells <- IntegrateData(anchorset = anchors, dims=1:30)
-DefaultAssay(cells) <- "integrated"
-
-# Run the standard workflow for visualization and clustering in the integrated data
-cells <- ScaleData(cells, verbose = FALSE)
-cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
-cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
-cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
-cells <- FindClusters(cells, resolution = 0.5)
+cells <- integrated_together_no_mouse()
 
 saveRDS(cells, cache_file)
 } else {
@@ -121,6 +98,8 @@ cells$cell.type.shortest <- case_when(
 
 ```
 
+
+# Counts of cell types
 
 Here is the data where I integrated all the datasets against the Aizarani reference:
 
@@ -247,11 +226,352 @@ cells$aizarani.cell.type <- cell_types$predicted.cell.type
 
 
 Idents(cells) <- cells$aizarani.cell.type
-p4 <- DimPlot(cells) + ggtitle("Predicted cell type")
+p4 <- DimPlot(cells) + ggtitle("Predicted cell type") + colScale  
 
 p4
 
 ```
 
+# Hepatocytes
 
+
+Here I show all, nuclei (pre and post engraftment, so hep and high samples) with the cell types annotated (left panel)
+
+
+```{r fig.height= 8, fig.width = 6}
+
+pre_post <- subset(cells, dataset.type %in% c("high", 'hep'))
+
+p1 <-  DimPlot(pre_post) + ggtitle("Predicted cell type (pre/post)") + colScale  
+
+hep <- subset(pre_post, aizarani.cell.type == "Hepatocytes")
+hep <- subset(hep, seurat_clusters != 6)
+
+p2 <- DimPlot(hep, group.by="cell.type.shortest") + ggtitle("Hepatocytes (pre/post)")
+
+
+p3 <- DimPlot(subset(hep, dataset.type == "hep"), group.by="cell.type.shortest") + ggtitle("Hepatocytes (pre)")
+
+p4 <- DimPlot(subset(hep, dataset.type == "high"), group.by="cell.type.shortest") + ggtitle("Hepatocytes (post)")
+
+
+legend <- cowplot::get_legend(p2)
+
+#p1 / ((p2 + NoLegend()) + (p3 + NoLegend()) + (p4 + NoLegend()) + legend)
+
+p5 <- cowplot::plot_grid(p1)
+p6 <- cowplot::plot_grid((p2 + NoLegend()), (p3 + NoLegend()), (p4 + NoLegend()), legend)
+
+cowplot::plot_grid(p5, p6, ncol = 1, rel_heights = c(0.3, 0.6))
+
+```
+
+## Marker genes - hepatocytes only
+
+From now on, I only analyse the hepatocytes from the pre (hep) and post (high) conditions.
+
+We can identify genes that are differentially expressed between the seurat clusters, or between the groupings we've assigned.  As a reminder, these look like this:
+
+
+```{r fig.width=5, fig.height=3}
+
+
+p1 <- DimPlot(hep, group.by="seurat_clusters")
+p2 <- DimPlot(hep, group.by="cell.type.shortest")
+
+p1 + p2
+```
+
+
+### Combining all cells together 
+
+Here are the top 10 marker genes for each Seurat cluster, using the `FindAllMarkers` function.  This I use the 'RNA' assay ([as recommended by the Seurat developers](https://www.biostars.org/p/399789/)), which is the original data, rather than the integrated data.
+
+```{r include=FALSE}
+DefaultAssay(hep) <- "RNA"
+hep <- NormalizeData(hep)
+hep <- ScaleData(hep, split.by="dataset.name")
+Idents(hep) <- hep$seurat_clusters
+hep_markers <- FindAllMarkers(hep, only.pos = TRUE, logfc.threshold=0.25)
+```
+
+
+```{r}
+top <- hep_markers %>% 
+  mutate(gene=rownames(hep_markers)) %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = avg_log2FC, n=10)
+
+top
+
+top_genes <- unique(top$gene)
+```
+
+
+Here's a heatmap of this data.
+
+```{r}
+DoHeatmap(hep, features=top_genes)
+```
+
+
+
+
+
+
+Some of the genes have weirdly heterogeneous expression within clusters - there are some cells in each cluster with high expression, and some with low expression.  Is this something to do with integration/scaling? 
+
+
+Note that in the above, I use plot the 'scaled' data, where every feature (gene) has been centered (by subtracting the mean expression level), and scaled (by dividing the centered gene expression levels by their standard deviations). There's more information about how scaling works in the [Seurat Documentation](https://satijalab.org/seurat/reference/scaledata) - note that I scaled data from the four samples separately. This makes it possible to make a nice heatmap - if I use the log-noramlized data instead, the heatmap looks like the below.
+
+```{r}
+DoHeatmap(hep, features=top_genes, slot="data") + ggtitle("Pre- and post-engraftment")
+```
+Which is not particularly useful because some genes are more highly expressed than others.  So it's better to plot the scaled, centered data.
+
+
+Try splitting the data into two heatmaps - one for the pre-engraftment cells and one for the post-engraftment cells.
+
+```{r fig.width=10, fig.height=7}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=top_genes) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=top_genes) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+We can see that these genes seem to be differentially expressed between the conditions. 
+
+### Markers conserved between conditions
+
+Let's try instead finding markers with `FindConservedMarkers`, which is supposed to find genes that are markers for each cluster, but conserved between the conditions.
+
+```{r include=FALSE}
+
+FindAllConservedMarkers <- function(obj, grouping_var, feats=NULL, logfc_thresh=0.25, minpct = 0.1) {
+  conserved_hep_markers <- tibble()
+
+for (i in unique(Idents(obj))) {
+  
+  m <- FindConservedMarkers(obj, ident.1 = i, grouping.var=grouping_var, features=feats, logfc.threshold=logfc_thresh, min.pct=minpct)
+  
+  m <- m %>% 
+    mutate(gene = rownames(m)) %>% 
+    mutate(cluster = i) %>% 
+    as_tibble()
+  
+  conserved_hep_markers <- bind_rows(m, conserved_hep_markers)
+}
+  
+  return(conserved_hep_markers)
+}
+
+conserved_hep <- FindAllConservedMarkers(hep, "dataset.type")
+
+```
+
+This function does seperate analyses for each sample (pre- and post-engraftment), but we have to decide how to combine this infomration.  The default is to rank by minimum p-value - this is what I do for each cluster here. 
+
+```{r}
+top2 <- conserved_hep %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = minimump_p_val, n=10)
+
+top2
+
+top_genes2 <- top2 %>% 
+  arrange(minimump_p_val) %>% 
+  pull(gene)
+
+
+
+```
+
+Let's see how these genes look on the heatmap
+
+```{r}
+DoHeatmap(hep, features=top_genes2) + ggtitle("Pre- and post-engraftment")
+```
+
+There is still a lot of heterogeneity within clusters - check out these marker genes for the two different samples.
+
+
+```{r fig.width=10, fig.height=7}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=top_genes2) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=top_genes2) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+So it seems to be quite difficult to identify marker genes for the clusters because gene expression varies so much between the samples.  This function doesn't seem to be great at finding conserved markers (or perhaps there are none?).
+
+Try instead clustering by the cell types we've assigned, rather than the Seurat clusters
+
+
+```{r include=FALSE}
+Idents(hep) <- hep$cell.type.shortest
+conserved_hep2 <- FindAllConservedMarkers(hep, "dataset.type")
+```
+
+```{r}
+top3 <- conserved_hep2 %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = minimump_p_val, n=10)
+
+top3
+
+top_genes3 <- top3 %>% 
+  arrange(minimump_p_val) %>% 
+  pull(gene)
+
+
+
+```
+
+Here's the heatmap for these results
+
+```{r}
+DoHeatmap(hep, features=top_genes3) + ggtitle("Pre- and post-engraftment")
+```
+
+```{r fig.width=10, fig.height=7}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=top_genes3) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=top_genes3) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+
+Perhaps it's better to take the top 5 genes for both pre- and post-engraftment separately.  The top genes for the pre-engraftment
+
+
+
+```{r}
+top_hep <- conserved_hep2 %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = hep_avg_log2FC, n=5)
+
+top_hep
+```
+
+And for post-engraftment
+
+
+```{r}
+
+top_high <- conserved_hep2 %>% 
+  group_by(cluster) %>% 
+  slice_max(order_by = high_avg_log2FC, n=5)
+
+top_high
+
+
+```
+
+Combining these genes in a heatmap
+
+```{r}
+top_genes4 <- unique(c(top_hep$gene, top_high$gene))
+
+
+```
+
+```{r}
+DoHeatmap(hep, features=top_genes4) + ggtitle("Pre- and post-engraftment")
+```
+
+
+And showing the pre and post-engraftment marker genes separately
+
+```{r fig.width=7, fig.height=7}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=unique(top_hep$gene)) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=unique(top_high$gene)) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+And showing all the marker genes (for either sample) separately for each sample
+
+```{r fig.width=7, fig.height=7}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=c(unique(top_hep$gene), unique(top_high$gene))) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=c(unique(top_high$gene), unique(top_hep$gene))) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+
+### Genes involved in zonation
+
+Instead, just look specifically at the marker genes that Marti asked about.
+
+
+
+```{r}
+markers <- c("ASS1", "CYP2E1", "ARG1", "ASL1", "GLUL", "CY1A2", "LRG5", "AXIN2", "KIAA0319L")
+markers
+```
+
+
+Not all of these are found in the data - the ones that are found are:
+
+```{r}
+markers[markers %in% rownames(hep)]
+```
+
+
+```{r include=FALSE}
+DefaultAssay(hep) <- "RNA"
+
+
+hep_genes_of_interest2 <- FindAllConservedMarkers(hep, "dataset.type", feats=markers[markers %in% rownames(hep)], logfc_thresh = 0, minpct=0)
+```
+
+```{r}
+hep_genes_of_interest2
+```
+
+Here's a heatmap of this data
+```{r}
+DoHeatmap(hep, features=markers)
+```
+
+
+And here are seperate heatmaps for the pre- and post-engraftment samples
+
+```{r}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=markers) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=markers) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+
+Here I arrange by cell type rather than cluster number
+
+```{r}
+Idents(hep) <- hep$cell.type.shortest
+DoHeatmap(hep, features=markers)
+```
+```{r}
+p1 <- DoHeatmap(subset(hep, dataset.type=="hep"), features=markers) + ggtitle("Pre-engraftment")
+p2 <- DoHeatmap(subset(hep, dataset.type=="high"), features=markers) + ggtitle("Post-engraftment")
+
+p1 + p2
+```
+
+The pre- and post-engraftment samples have very different patterns of expression of these genes across the different assigned cell types.
+
+```{r, fig.width=5, fig.height=15}
+clust <- purrr::map(unique(hep$dataset.type), ~ DimPlot(subset(hep, dataset.type==.), group.by="cell.type.shortest"))
+
+plotlist <- list()
+for (marker in markers[markers %in% rownames(hep)]) {
+  plotlist[[marker]] <- FeaturePlot(hep, marker, split.by="dataset.type", order=TRUE, keep.scale="feature") + theme(legend.position = "right")
+}
+
+
+
+patchwork::wrap_plots(plotlist, ncol=1)
+
+
+```
 
