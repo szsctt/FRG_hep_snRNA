@@ -272,3 +272,38 @@ integrated_with_aizarani <- function() {
 }
 
 #import_one_without_mouse("high1")
+
+integrated_together_no_mouse <- function() {
+  
+  
+  data.obj <- import_without_mouse()
+  
+  ## add column names for later
+  for (i in seq_along(names(data.obj))) {
+    name <- names(data.obj)[i]
+    type <- stringr::str_replace(name, "\\d+$", "")
+    data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+    data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+    data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+    
+    data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+    data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+  }
+  
+  # do integration
+  features <- SelectIntegrationFeatures(object.list = data.obj)
+  anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+  cells <- IntegrateData(anchorset = anchors, dims=1:30)
+  DefaultAssay(cells) <- "integrated"
+  
+  # Run the standard workflow for visualization and clustering in the integrated data
+  cells <- ScaleData(cells, verbose = FALSE)
+  cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+  cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+  cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+  cells <- FindClusters(cells, resolution = 0.5)
+  
+  return(cells)
+  
+}
+
