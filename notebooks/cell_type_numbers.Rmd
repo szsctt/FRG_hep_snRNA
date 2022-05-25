@@ -506,7 +506,7 @@ Instead, just look specifically at the marker genes that Marti asked about.
 
 
 ```{r}
-markers <- c("ASS1", "CYP2E1", "ARG1", "ASL1", "GLUL", "CY1A2", "LRG5", "AXIN2", "KIAA0319L")
+markers <- c("ASS1", "CYP2E1", "ARG1", "ASL1", "GLUL", "CY1A2", "LRG5", "LGR5", "AXIN2", "KIAA0319L")
 markers
 ```
 
@@ -565,7 +565,7 @@ clust <- purrr::map(unique(hep$dataset.type), ~ DimPlot(subset(hep, dataset.type
 
 plotlist <- list()
 for (marker in markers[markers %in% rownames(hep)]) {
-  plotlist[[marker]] <- FeaturePlot(hep, marker, split.by="dataset.type", order=TRUE, keep.scale="feature") + theme(legend.position = "right")
+  plotlist[[marker]] <- FeaturePlot(hep, marker, split.by="dataset.type", order=TRUE, keep.scale="feature", slot="data") + theme(legend.position = "right")
 }
 
 
@@ -574,4 +574,5 @@ patchwork::wrap_plots(plotlist, ncol=1)
 
 
 ```
+
 
