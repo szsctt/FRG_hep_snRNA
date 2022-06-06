@@ -1,6 +1,7 @@
-## Info from Marti
+## snRNA-seq analysis
 
-Anyway, the nuclei samples are as follows, each as replicates. 
+
+This repository contains the code used to analyse single nuclei RNA-seq data from hepatoctyes before and after engraftment into FRG mice, including some samples transduced with AAV.  The sample information is below.
 
 - Low engrafted hFRG 1 - #589 - Batch3/Rerun_of_Prev_batches/Rod_1 
 - Low engrafted hFRG 2 - #602 - Batch3/Rerun_of_Prev_batches/Rod_2 
@@ -13,42 +14,11 @@ Anyway, the nuclei samples are as follows, each as replicates.
 - #193 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_3 
 - #224 LK03 Venus + REDH Cerulean - Batch3/Rod_ASV_3_4 
 
-I attach the maps of the transgenes in case you need them for anything. 
+Raw data and count matrices can be obtained from the GEO (add link here once uploaded).
 
-Genes of interest related to zonation: 
+### Container
 
-- Glul 
-- Cyp2e1 
-- Ass1 
-- Asl 
-- Alb 
-- Cyp2f2 
-- Cyp1a2 
-- Gstm3 
-- Arg1 
-- Pck1 
-- Sdhd 
-
-Genes of interest related to proliferation: 
-
-- Axin2
-- Lgr5
-
-Genes of interest related to AAV transduction. I think here it would be cool if possible to check if they correlate with AAV transduction. Also cool to check if any other gene correlates with AAV transduction (not sure if possible). 
-
-- AAVR (KIIAA0319L)
-- GPR108
-
-Genes related to response to AAV: 
-
-- p53 
-- p21
-- IFI16 
-- TLR2
-
-And then AAV transduction / correlation with zonation. 
-
-## Container
+The analysis was conducted inside a `docker` container, run with `singularity`.  Use the `run_rstudio_gcp.sh` script to run this container locally (or the `run_rstudio.sh` script for a SL
 
 I tried installing Seurat and Monocle3 with conda, but ran into some issues.  Instead, I made a docker container with them inside, which seems to work (`container` has the `Dockerfile`).  I run this with `singularity` since it allows the user to be the same inside and outside the container, but it's probably possible to run with `Docker` as well.
 
