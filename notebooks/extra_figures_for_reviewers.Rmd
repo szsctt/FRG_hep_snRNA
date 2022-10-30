@@ -129,7 +129,7 @@ The [HGNC symbol for cytokeratin 7 (aka keratin 7) is KRT7](https://www.genename
 #FeaturePlot(cells.hep, features="KRT7", split.by = "dataset.type", keep.scale="all", order=TRUE)
 DefaultAssay(cells.hep) <- "RNA"
 
-plot_feature(cells.hep, "KRT7")
+#plot_feature(cells.hep, "KRT7")
 plotlist <- list()
 for (type in unique(cells.hep$dataset.type)) {
   plotlist[[type]] <- FeaturePlot(
@@ -191,7 +191,7 @@ write_tsv(vector_counts, file.path("..", "out", "vector_zone_counts.tsv"))
 
 Here's a plot where I combine the expression of LK03 and REDH for the two different experiments.
 
-```{r fig.width=4, fig.height=3}
+```{r}
 aav_genes <- rownames(cells.hep)[stringr::str_detect(rownames(cells.hep), "VENUS|CERULEAN")]
 
 extract_count_df <- function(dataset_type) {
