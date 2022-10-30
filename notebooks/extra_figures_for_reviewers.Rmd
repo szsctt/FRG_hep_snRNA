@@ -1,0 +1,289 @@
+---
+title: "Extra analysis"
+output:
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    code_folding: hide
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height=5, dev = c('png', 'pdf'))
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+library(patchwork)
+library(cowplot)
+library(ggrepel)
+source("workflow.R")
+
+cache_dir <- "cache"
+dir.create(cache_dir)
+workspace_image <- glue::glue("{cache_dir}/aizarani_integration_hepatocytes.R")
+
+```
+
+
+```{r loadIntegrated, include=FALSE}
+
+cache_file <- file.path(cache_dir, "integerated_together_no_mouse.RDS")
+
+if (!file.exists(cache_file)) {
+
+data.obj <- import_without_mouse()
+
+## add column names for later
+for (i in seq_along(names(data.obj))) {
+  name <- names(data.obj)[i]
+  type <- stringr::str_replace(name, "\\d+$", "")
+  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
+  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
+  
+  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
+  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
+}
+
+# do integration
+features <- SelectIntegrationFeatures(object.list = data.obj)
+anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
+cells <- IntegrateData(anchorset = anchors, dims=1:30)
+DefaultAssay(cells) <- "integrated"
+
+# Run the standard workflow for visualization and clustering in the integrated data
+cells <- ScaleData(cells, verbose = FALSE)
+cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
+cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
+cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
+cells <- FindClusters(cells, resolution = 0.5)
+
+cells$cell.type <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
+  cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+  cells$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+  cells$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+  cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+  cells$seurat_clusters == 6 ~ "Endothelial cells (6)"
+)
+
+cells$cell.type.shorter <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal 0",
+  cells$seurat_clusters == 1 ~ "Mid-zonal 1",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal 2",
+  cells$seurat_clusters == 3 ~ "Central 3",
+  cells$seurat_clusters == 4 ~ "Portal 4",
+  cells$seurat_clusters == 5 ~ "Mid-zonal 5",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+cells$cell.type.shortest <- case_when(
+  cells$seurat_clusters == 0 ~ "Portal",
+  cells$seurat_clusters == 1 ~ "Mid-zonal",  
+  cells$seurat_clusters == 2 ~ "Mid-zonal",
+  cells$seurat_clusters == 3 ~ "Central",
+  cells$seurat_clusters == 4 ~ "Portal",
+  cells$seurat_clusters == 5 ~ "Mid-zonal",
+  cells$seurat_clusters == 6 ~ "Endothelial"
+)
+
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+```
+
+
+Some additional analysis to address reviewer questions.
+
+
+## Clusters
+
+First just a few plots to remind myself of the data
+
+```{r}
+DimPlot(cells)
+```
+
+```{r}
+cells.hep <- subset(cells, cell.type.shortest != "Endothelial")
+DimPlot(cells.hep, group.by="cell.type.shortest", split.by = "dataset.type")
+```
+
+## KRT7
+
+>Everything is pretty much ready, but one reviewer asked for the 10x expression profile (before and after engraftment) of Cytokeratin 7. Could you prepare that whenever you have time? 
+
+
+The [HGNC symbol for cytokeratin 7 (aka keratin 7) is KRT7](https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/HGNC:6445).
+
+```{r fig.height=4, fig.width=10}
+#FeaturePlot(cells.hep, features="KRT7", split.by = "dataset.type", keep.scale="all", order=TRUE)
+DefaultAssay(cells.hep) <- "RNA"
+
+plot_feature(cells.hep, "KRT7")
+plotlist <- list()
+for (type in unique(cells.hep$dataset.type)) {
+  plotlist[[type]] <- FeaturePlot(
+    subset(cells.hep, dataset.type == type), 
+    features="KRT7", order=TRUE) +
+    scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
+                                               mid="#9871edff",
+                                               high="#0902ffff",
+                                               k=50), limits=c(0,2)) +
+    ggtitle(type)
+}
+patchwork::wrap_plots(plotlist)
+```
+
+
+It seems that only a small population of the pre-engraftment hepatocytes express KRT7.
+
+## Cerulean/venus expression in zones
+
+> Also, if it was possible, could you send me a table with the counts of LK03 and REDH transduction (Venus+ / Cerulean+) on Fig 7, but when it comes to the defined central/portal/mid-zonal? 
+>What we want to know is the reads for REDH (Venus in experiment 1 and Cerulean in experiment 2) vs reads for LK03 (Cerulean in experiment 1 and Venus in cerulean 2). 
+
+First I count the cells expressing Cerulean or Venus in each zone - here 'expressing' means a non-zero count.
+
+```{r}
+
+aav_genes <- rownames(cells)[stringr::str_detect(rownames(cells), "VENUS|CERULEAN")]
+
+
+cells.hep$expr.cerulean <- PercentageFeatureSet(cells.hep, pattern = "CERULEAN") != 0
+cells.hep$expr.venus <- PercentageFeatureSet(cells.hep, pattern = "VENUS") != 0
+
+cells.hep$expr.LK03 <- case_when(
+  cells.hep$dataset.type == "LK03C_REDHV" & cells.hep$expr.cerulean ~ TRUE,
+  cells.hep$dataset.type == "LK03V_REDHC" & cells.hep$expr.venus ~ TRUE,
+  TRUE ~ FALSE
+)
+
+cells.hep$expr.REDH <- case_when(
+  cells.hep$dataset.type == "LK03V_REDHC" & cells.hep$expr.cerulean ~ TRUE,
+  cells.hep$dataset.type == "LK03C_REDHV" & cells.hep$expr.venus ~ TRUE,
+  TRUE ~ FALSE
+)
+
+vector <- tibble(
+  sample = cells.hep$dataset.type,
+  zone = cells.hep$cell.type.shortest,
+  REDH = cells.hep$expr.REDH,
+  LK03 = cells.hep$expr.LK03,
+  cell_id = colnames(cells.hep)
+) 
+
+vector_counts <- vector %>% 
+  count(sample, zone, REDH, LK03) %>% 
+  filter(str_detect(sample, "LK03"))
+
+vector_counts
+
+write_tsv(vector_counts, file.path("..", "out", "vector_zone_counts.tsv"))
+
+
+```
+
+Here's a plot where I combine the expression of LK03 and REDH for the two different experiments.
+
+```{r fig.width=4, fig.height=3}
+extract_count_df <- function(dataset_type) {
+  counts <- 
+    subset(cells.hep, dataset.type == dataset_type)@assays$RNA@data[aav_genes,] %>% 
+    as.matrix %>% 
+  t() %>% 
+  as.data.frame() %>% 
+    mutate(sample = dataset_type)
+  
+  counts$cell_id <- rownames(counts)
+  
+  return(counts)
+  
+}
+
+lk03v_redhc_counts <- extract_count_df("LK03V_REDHC")
+lk03c_redhv_counts <- extract_count_df("LK03C_REDHV")
+counts <- bind_rows(lk03v_redhc_counts, lk03c_redhv_counts)
+#lk03c_redhv_counts <- subset(cells.hep, dataset.type == "LK03V_REDHC")@assays$RNA@counts
+
+
+
+vector <- vector %>% 
+  filter(str_detect(sample, "LK")) %>% 
+  left_join(counts, by=c("cell_id", "sample")) %>% 
+  mutate(LK03 = case_when(
+    sample == "LK03C_REDHV" ~ `AAV-CERULEAN-BC-3`,
+    sample == "LK03V_REDHC" ~ `AAV-VENUS-BC-1`
+  )) %>% 
+  mutate(REDH = case_when(
+    sample == "LK03C_REDHV" ~ `AAV-VENUS-BC-1`,
+    sample == "LK03V_REDHC" ~ `AAV-CERULEAN-BC-3`
+  )) %>% 
+  pivot_longer(REDH:LK03, names_to="Vector", values_to = "Count") 
+
+vector %>% 
+  ggplot(aes(x=zone, y=Count)) +
+    geom_jitter(height=0, width=0.3, alpha=0.5) +
+    geom_violin() +
+    facet_wrap(vars(Vector)) +
+  theme_classic() +
+  labs(x="", y="Expression Level")
+
+```
+
+
+And here I split by experiment
+
+```{r}
+vector %>% 
+  ggplot(aes(x=zone, y=Count)) +
+    geom_jitter(height=0, width=0.3, alpha=0.5) +
+    geom_violin() +
+    facet_wrap(Vector ~ sample) +
+  theme_classic() +
+  labs(x="", y="Expression Level")
+```
+
+
+## Zonation genes
+
+> Could you maybe make few more UMAP plots with known hepatocyte zonation genes? Or just a table with all differentially expressed genes between clusters? If you are too busy Rodrigo also said he can do it if we sent him the RData files with the Seurat Objects. 
+
+
+Here I make a table of the differentially expressed genes between the zones, when I combine all the 
+
+```{r}
+#cells.hep
+Idents(cells.hep) <- cells.hep$cell.type.shortest
+DefaultAssay(cells.hep) <-"RNA"
+all.markers <- FindAllMarkers(cells.hep, logfc.threshold = 0.25, test.use="wilcox") 
+
+all.markers %>% 
+  arrange(desc(abs(avg_log2FC)))
+
+write_tsv(all.markers, file.path("..", "out", "zonation_all_markers.tsv"))
+```
+
+
+I also do this for each sample separately as well, and save the results 
+
+```{r}
+for (sample in unique(cells$dataset.type)) {
+  markers <- FindAllMarkers(
+    subset(cells.hep, dataset.type == sample), 
+    logfc.threshold = 0.25, test.use="wilcox") 
+  
+  write_tsv(markers, file.path("..", "out", 
+                               glue::glue("zonation_{sample}_markers.tsv")))
+}
+```
+
