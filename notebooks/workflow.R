@@ -307,3 +307,38 @@ integrated_together_no_mouse <- function() {
   
 }
 
+plot_feature <- function(plot.cells, feature_name) {
+  # get list of plots for this feature
+  plots <- FeaturePlot(plot.cells, split.by="dataset.type", features=feature_name, keep.scale="all", order=TRUE)
+  
+  # add custom titles
+  plots[[1]] <- plots[[1]] + ggtitle("Pre-engraftment") 
+  plots[[2]] <- plots[[2]] + ggtitle("hFRG hepatocytes") 
+  
+  plots
+  
+  # hack to get scale bar
+  plots.legend <- cowplot::get_legend(FeaturePlot(plot.cells, features= feature_name) + 
+                                        theme(legend.position = "bottom", legend.text = element_text(size=8)) )
+  
+  wrap_plots(plots.legend)
+  
+  layout <- "
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+AAA
+#B#
+"
+  
+  return(wrap_plots(plots, plots.legend, design=layout))
+  
+}
+
