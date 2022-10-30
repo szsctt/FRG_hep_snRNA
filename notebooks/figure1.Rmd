@@ -76,34 +76,6 @@ cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
 cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
 cells <- FindClusters(cells, resolution = 0.5)
 
-saveRDS(cells, cache_file)
-} else {
-  cells <- readRDS(cache_file)
-}
-
-```
-
-## Human hepatocytes analysed with single-cell RNA sequencing prior and post-engraftment in the hFRG model differ in zonal proportions but maintain zonation markers 
-
-
-### Nuclei counts
-
-How many nuclei in each sample?
-
-
-```{r}
-tibble(
-  name = as.character(cells$dataset.name),
-) %>% 
-  dplyr::count(name)
-
-```
-
-### Marker genes
-
-Are there periportal or central marker genes that have significantly higher expression in the original hepatocytes?
-
-```{r}
 cells$cell.type <- case_when(
   cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
   cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
@@ -133,6 +105,36 @@ cells$cell.type.shortest <- case_when(
   cells$seurat_clusters == 5 ~ "Mid-zonal",
   cells$seurat_clusters == 6 ~ "Endothelial"
 )
+
+
+saveRDS(cells, cache_file)
+} else {
+  cells <- readRDS(cache_file)
+}
+
+```
+
+## Human hepatocytes analysed with single-cell RNA sequencing prior and post-engraftment in the hFRG model differ in zonal proportions but maintain zonation markers 
+
+
+### Nuclei counts
+
+How many nuclei in each sample?
+
+
+```{r}
+tibble(
+  name = as.character(cells$dataset.name),
+) %>% 
+  dplyr::count(name)
+
+```
+
+### Marker genes
+
+Are there periportal or central marker genes that have significantly higher expression in the original hepatocytes?
+
+```{r}
 
 cells.section1 <- subset(cells, dataset.type %in% c("hep", 'high'))
 
