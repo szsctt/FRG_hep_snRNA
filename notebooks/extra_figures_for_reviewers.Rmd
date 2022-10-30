@@ -155,10 +155,6 @@ It seems that only a small population of the pre-engraftment hepatocytes express
 First I count the cells expressing Cerulean or Venus in each zone - here 'expressing' means a non-zero count.
 
 ```{r}
-
-aav_genes <- rownames(cells)[stringr::str_detect(rownames(cells), "VENUS|CERULEAN")]
-
-
 cells.hep$expr.cerulean <- PercentageFeatureSet(cells.hep, pattern = "CERULEAN") != 0
 cells.hep$expr.venus <- PercentageFeatureSet(cells.hep, pattern = "VENUS") != 0
 
@@ -196,6 +192,8 @@ write_tsv(vector_counts, file.path("..", "out", "vector_zone_counts.tsv"))
 Here's a plot where I combine the expression of LK03 and REDH for the two different experiments.
 
 ```{r fig.width=4, fig.height=3}
+aav_genes <- rownames(cells.hep)[stringr::str_detect(rownames(cells.hep), "VENUS|CERULEAN")]
+
 extract_count_df <- function(dataset_type) {
   counts <- 
     subset(cells.hep, dataset.type == dataset_type)@assays$RNA@data[aav_genes,] %>% 
@@ -214,6 +212,7 @@ lk03v_redhc_counts <- extract_count_df("LK03V_REDHC")
 lk03c_redhv_counts <- extract_count_df("LK03C_REDHV")
 counts <- bind_rows(lk03v_redhc_counts, lk03c_redhv_counts)
 #lk03c_redhv_counts <- subset(cells.hep, dataset.type == "LK03V_REDHC")@assays$RNA@counts
+
 
 
 
