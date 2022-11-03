@@ -26,42 +26,17 @@ source("workflow.R")
 cache_dir <- "cache"
 dir.create(cache_dir)
 workspace_image <- glue::glue("{cache_dir}/aizarani_integration_hepatocytes.R")
-
+set.seed(123)
 ```
 
 
 ```{r loadIntegrated, include=FALSE}
 
-cache_file <- file.path(cache_dir, "integerated_together_no_mouse.RDS")
+cache_file <- file.path(cache_dir, "integrated_together_no_mouse.RDS")
 
 if (!file.exists(cache_file)) {
 
-data.obj <- import_without_mouse()
-
-## add column names for later
-for (i in seq_along(names(data.obj))) {
-  name <- names(data.obj)[i]
-  type <- stringr::str_replace(name, "\\d+$", "")
-  data.obj[[name]]$dataset.ind <- rep(i, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.name <-  rep(name, length(colnames(data.obj[[name]])))
-  data.obj[[name]]$dataset.type <- rep(type, length(colnames(data.obj[[name]])))
-  
-  data.obj[[name]] <- NormalizeData(data.obj[[name]], normalization.method = "LogNormalize", scale.factor = 10000)
-  data.obj[[name]] <- FindVariableFeatures(data.obj[[name]], selection.method = "vst", nfeatures = 2000)
-}
-
-# do integration
-features <- SelectIntegrationFeatures(object.list = data.obj)
-anchors <- FindIntegrationAnchors(object.list = data.obj, anchor.features = features, dims=1:30)
-cells <- IntegrateData(anchorset = anchors, dims=1:30)
-DefaultAssay(cells) <- "integrated"
-
-# Run the standard workflow for visualization and clustering in the integrated data
-cells <- ScaleData(cells, verbose = FALSE)
-cells <- RunPCA(cells, npcs = 30, verbose = FALSE)
-cells <- RunUMAP(cells, dims = 1:30, reduction.name = "UMAP")
-cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
-cells <- FindClusters(cells, resolution = 0.5)
+cells <- integrated_together_no_mouse()
 
 cells$cell.type <- case_when(
   cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
@@ -93,6 +68,7 @@ cells$cell.type.shortest <- case_when(
   cells$seurat_clusters == 6 ~ "Endothelial"
 )
 
+cells@reductions$UMAP@cell.embeddings[,2] <- cells@reductions$UMAP@cell.embeddings[,2] * -1
 
 saveRDS(cells, cache_file)
 } else {
@@ -126,22 +102,43 @@ DimPlot(cells.hep, group.by="cell.type.shortest", split.by = "dataset.type")
 The [HGNC symbol for cytokeratin 7 (aka keratin 7) is KRT7](https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/HGNC:6445).
 
 ```{r fig.height=4, fig.width=10}
-#FeaturePlot(cells.hep, features="KRT7", split.by = "dataset.type", keep.scale="all", order=TRUE)
+
 DefaultAssay(cells.hep) <- "RNA"
 
-#plot_feature(cells.hep, "KRT7")
-plotlist <- list()
-for (type in unique(cells.hep$dataset.type)) {
+cells.plot <- subset(cells.hep, dataset.type %in% c("high", "hep"))
+DefaultAssay(cells.plot) <- "RNA"
+
+plot_feature <- function(gene_name) {
+  
+  max_expr <- max(cells.plot@assays$RNA[gene_name])
+  min_expr <- min(cells.plot@assays$RNA[gene_name])
+  plotlist <- list()
+for (type in unique(cells.plot$dataset.type)) {
   plotlist[[type]] <- FeaturePlot(
     subset(cells.hep, dataset.type == type), 
-    features="KRT7", order=TRUE) +
+    features=gene_name, order=TRUE) +
     scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
                                                mid="#9871edff",
                                                high="#0902ffff",
-                                               k=50), limits=c(0,2)) +
+                                               k=50), limits=c(min_expr,max_expr)) +
     ggtitle(type)
 }
-patchwork::wrap_plots(plotlist)
+
+plotlist[['hep']] <- plotlist[['hep']] + ggtitle("Pre-engraftment") + theme(legend.position = "none")
+plotlist[['high']] <- plotlist[['high']] + ggtitle("hFRG hepatocytes")
+
+ print(patchwork::wrap_plots(plotlist))
+}
+
+plot_feature("KRT7")
+```
+
+For reference here is a similar plot for LGR5
+```{r}
+plotlist <- FeaturePlot(cells.plot, "LGR5", split.by="dataset.type", combine=FALSE)
+plotlist[[1]] <- plotlist[[1]] + ggtitle("Pre-engraftment") + theme(legend.position = "none")
+plotlist[[2]] <- plotlist[[2]] + ggtitle("hFRG hepatocytes")
+print(patchwork::wrap_plots(plotlist))
 ```
 
 
@@ -149,34 +146,44 @@ It seems that only a small population of the pre-engraftment hepatocytes express
 
 ## Cerulean/venus expression in zones
 
+
+For reference, here are the counts of cells in each cluster and each sample
+
+```{r}
+tibble(
+  name = as.character(cells$dataset.name),
+  cluster = as.character(cells$cell.type)
+) %>% 
+  count(name, cluster) %>% 
+  pivot_wider(names_from = cluster, values_from = n)
+```
+
+
 > Also, if it was possible, could you send me a table with the counts of LK03 and REDH transduction (Venus+ / Cerulean+) on Fig 7, but when it comes to the defined central/portal/mid-zonal? 
 >What we want to know is the reads for REDH (Venus in experiment 1 and Cerulean in experiment 2) vs reads for LK03 (Cerulean in experiment 1 and Venus in cerulean 2). 
 
-First I count the cells expressing Cerulean or Venus in each zone - here 'expressing' means a non-zero count.
+First I count the cells expressing Cerulean or Venus in each zone - here 'expressing' means a non-zero count.  Note that this is only for the hepatocyte clusters, and the transduced samples (LK03V_REDHC, LK03C_REDHV)
 
 ```{r}
-cells.hep$expr.cerulean <- PercentageFeatureSet(cells.hep, pattern = "CERULEAN") != 0
-cells.hep$expr.venus <- PercentageFeatureSet(cells.hep, pattern = "VENUS") != 0
-
-cells.hep$expr.LK03 <- case_when(
-  cells.hep$dataset.type == "LK03C_REDHV" & cells.hep$expr.cerulean ~ TRUE,
-  cells.hep$dataset.type == "LK03V_REDHC" & cells.hep$expr.venus ~ TRUE,
-  TRUE ~ FALSE
-)
-
-cells.hep$expr.REDH <- case_when(
-  cells.hep$dataset.type == "LK03V_REDHC" & cells.hep$expr.cerulean ~ TRUE,
-  cells.hep$dataset.type == "LK03C_REDHV" & cells.hep$expr.venus ~ TRUE,
-  TRUE ~ FALSE
-)
-
 vector <- tibble(
+  sample_type = cells.hep$dataset.name,
   sample = cells.hep$dataset.type,
   zone = cells.hep$cell.type.shortest,
-  REDH = cells.hep$expr.REDH,
-  LK03 = cells.hep$expr.LK03,
-  cell_id = colnames(cells.hep)
-) 
+  cerulean_count = as.vector(cells.hep@assays$RNA["AAV-CERULEAN-BC-3"]),
+  venus_count = as.vector(cells.hep@assays$RNA["AAV-VENUS-BC-1"]),
+  cerulean = as.vector(cells.hep@assays$RNA["AAV-CERULEAN-BC-3"]) != 0,
+  venus = as.vector(cells.hep@assays$RNA["AAV-VENUS-BC-1"]) != 0
+) %>% 
+  mutate(LK03 = case_when(
+  sample_type  == "LK03C_REDHV" & cerulean ~ TRUE,
+  sample_type  == "LK03V_REDHC" & venus ~ TRUE,
+  TRUE ~ FALSE
+)) %>% 
+  mutate(REDH = case_when(
+  sample_type  == "LK03V_REDHC" & cerulean ~ TRUE,
+  sample_type  == "LK03C_REDHV" & venus ~ TRUE,
+  TRUE ~ FALSE
+))
 
 vector_counts <- vector %>% 
   count(sample, zone, REDH, LK03) %>% 
@@ -185,6 +192,26 @@ vector_counts <- vector %>%
 vector_counts
 
 write_tsv(vector_counts, file.path("..", "out", "vector_zone_counts.tsv"))
+
+
+tibble(
+  dataset = cells$dataset.type,
+  sample = cells$dataset.name,
+  zone = cells$cell.type.shortest,
+  cerulean = as.vector(cells@assays$RNA["AAV-CERULEAN-BC-3"]) != 0,
+  venus = as.vector(cells@assays$RNA["AAV-VENUS-BC-1"]) != 0
+) %>% 
+  mutate(REDH = case_when(
+    dataset == "LK03C_REDHV" ~ cerulean,
+    dataset == "LK03V_REDHC" ~ venus
+  )) %>% 
+  mutate(LK03 = case_when(
+    dataset == "LK03C_REDHV" ~ venus,
+    dataset == "LK03V_REDHC" ~ cerulean
+  )) %>% 
+  filter(!is.na(REDH)) %>% 
+  count(sample, zone, REDH, LK03) %>% 
+  write_tsv(file.path("..", "out", "vector_counts_full.tsv"))
 
 
 ```
@@ -217,16 +244,16 @@ counts <- bind_rows(lk03v_redhc_counts, lk03c_redhv_counts)
 
 
 vector <- vector %>% 
-  filter(str_detect(sample, "LK")) %>% 
-  left_join(counts, by=c("cell_id", "sample")) %>% 
+  dplyr::filter(str_detect(sample, "LK")) %>% 
   mutate(LK03 = case_when(
-    sample == "LK03C_REDHV" ~ `AAV-CERULEAN-BC-3`,
-    sample == "LK03V_REDHC" ~ `AAV-VENUS-BC-1`
+    sample == "LK03C_REDHV" ~ cerulean_count,
+    sample == "LK03V_REDHC" ~ venus_count
   )) %>% 
   mutate(REDH = case_when(
-    sample == "LK03C_REDHV" ~ `AAV-VENUS-BC-1`,
-    sample == "LK03V_REDHC" ~ `AAV-CERULEAN-BC-3`
+    sample == "LK03C_REDHV" ~ venus_count,
+    sample == "LK03V_REDHC" ~ cerulean_count
   )) %>% 
+  select(sample, zone, REDH, LK03) %>% 
   pivot_longer(REDH:LK03, names_to="Vector", values_to = "Count") 
 
 vector %>% 
