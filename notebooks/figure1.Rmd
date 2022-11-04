@@ -683,59 +683,13 @@ plot.cells <- subset(cells.hep,  subset = dataset.type %in% c("hep", "high"))
 DefaultAssay(plot.cells) <- "RNA"
 
 
-plot_feature <- function(feature_name) {
-# get list of plots for this feature
-plots <- FeaturePlot(plot.cells, split.by="dataset.type", features=feature_name, keep.scale="all", order=TRUE)
-
-  max_expr <- max(plot.cells@assays$RNA[feature_name])
-  min_expr <- min(plot.cells@assays$RNA[feature_name])
-
-# add custom titles
-plots[[1]] <- plots[[1]] + ggtitle("Pre-engraftment") +
-    scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
-                                               mid="#9871edff",
-                                               high="#0902ffff",
-                                               k=50), limits=c(min_expr,max_expr)) 
-plots[[2]] <- plots[[2]] + ggtitle("hFRG hepatocytes") +
-    scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
-                                               mid="#9871edff",
-                                               high="#0902ffff",
-                                               k=50), limits=c(min_expr,max_expr)) 
-
-plots
-
-# hack to get scale bar
-plots.legend <- cowplot::get_legend(FeaturePlot(plot.cells, features= feature_name) + 
-                                      theme(legend.position = "bottom", legend.text = element_text(size=8)) )
-
-wrap_plots(plots.legend)
-
-layout <- "
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-AAA
-#B#
-"
-
-return(wrap_plots(plots, plots.legend, design=layout))
-
-}
-
-d <- plot_feature("ASS1")
-e <- plot_feature("CYP2E1")
-f <- plot_feature("LGR5")
-g <- plot_feature("AXIN2")
-h <- plot_feature("KIAA0319L")
-i <- plot_feature("GPR108")
-j <- plot_feature("KRT7")
+d <- plot_feature(plot.cells, "ASS1")
+e <- plot_feature(plot.cells, "CYP2E1")
+f <- plot_feature(plot.cells, "LGR5")
+g <- plot_feature(plot.cells, "AXIN2")
+h <- plot_feature(plot.cells, "KIAA0319L")
+i <- plot_feature(plot.cells, "GPR108")
+j <- plot_feature(plot.cells, "KRT7")
 
 ```
 
