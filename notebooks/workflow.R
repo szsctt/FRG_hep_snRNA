@@ -303,22 +303,64 @@ integrated_together_no_mouse <- function() {
   cells <- FindNeighbors(cells, reduction = "pca", dims = 1:30)
   cells <- FindClusters(cells, resolution = 0.5)
   
+  cells$cell.type <- case_when(
+    cells$seurat_clusters == 0 ~ "Portal hepatoctyes (0)",
+    cells$seurat_clusters == 1 ~ "Mid-zonal hepatocytes (1)",  
+    cells$seurat_clusters == 2 ~ "Mid-zonal hepatocytes (2)",
+    cells$seurat_clusters == 3 ~ "Central hepatocytes (3)",
+    cells$seurat_clusters == 4 ~ "Portal hepatocytes (4)",
+    cells$seurat_clusters == 5 ~ "Mid-zonal hepatocytes (5)",
+    cells$seurat_clusters == 6 ~ "Endothelial cells (6)"
+  )
+  
+  cells$cell.type.shorter <- case_when(
+    cells$seurat_clusters == 0 ~ "Portal 0",
+    cells$seurat_clusters == 1 ~ "Mid-zonal 1",  
+    cells$seurat_clusters == 2 ~ "Mid-zonal 2",
+    cells$seurat_clusters == 3 ~ "Central 3",
+    cells$seurat_clusters == 4 ~ "Portal 4",
+    cells$seurat_clusters == 5 ~ "Mid-zonal 5",
+    cells$seurat_clusters == 6 ~ "Endothelial"
+  )
+  
+  cells$cell.type.shortest <- case_when(
+    cells$seurat_clusters == 0 ~ "Portal",
+    cells$seurat_clusters == 1 ~ "Mid-zonal",  
+    cells$seurat_clusters == 2 ~ "Mid-zonal",
+    cells$seurat_clusters == 3 ~ "Central",
+    cells$seurat_clusters == 4 ~ "Portal",
+    cells$seurat_clusters == 5 ~ "Mid-zonal",
+    cells$seurat_clusters == 6 ~ "Endothelial"
+  )
+  
+  
   return(cells)
   
 }
 
-plot_feature <- function(plot.cells, feature_name) {
+plot_feature <- function(cells.plot, feature_name) {
   # get list of plots for this feature
-  plots <- FeaturePlot(plot.cells, split.by="dataset.type", features=feature_name, keep.scale="all", order=TRUE)
+  plots <- FeaturePlot(cells.plot, split.by="dataset.type", features=feature_name, keep.scale="all", order=TRUE)
+  
+  max_expr <- max(cells.plot@assays$RNA[feature_name])
+  min_expr <- min(cells.plot@assays$RNA[feature_name])
   
   # add custom titles
-  plots[[1]] <- plots[[1]] + ggtitle("Pre-engraftment") 
-  plots[[2]] <- plots[[2]] + ggtitle("hFRG hepatocytes") 
+  plots[[1]] <- plots[[1]] + ggtitle("Pre-engraftment") +
+    scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
+                                               mid="#9871edff",
+                                               high="#0902ffff",
+                                               k=50), limits=c(min_expr,max_expr)) 
+  plots[[2]] <- plots[[2]] + ggtitle("hFRG hepatocytes") +
+    scale_color_gradientn(colors=CustomPalette(low="#d2d1d3ff",
+                                               mid="#9871edff",
+                                               high="#0902ffff",
+                                               k=50), limits=c(min_expr,max_expr)) 
   
   plots
   
   # hack to get scale bar
-  plots.legend <- cowplot::get_legend(FeaturePlot(plot.cells, features= feature_name) + 
+  plots.legend <- cowplot::get_legend(FeaturePlot(cells.plot, features= feature_name) + 
                                         theme(legend.position = "bottom", legend.text = element_text(size=8)) )
   
   wrap_plots(plots.legend)
@@ -341,4 +383,3 @@ AAA
   return(wrap_plots(plots, plots.legend, design=layout))
   
 }
-
